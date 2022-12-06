@@ -1,5 +1,5 @@
 use axum::{
-    extract::{FromRef, Path, State},
+    extract::{Path, State, Query},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
@@ -7,11 +7,11 @@ use axum::{
 };
 use chrono::TimeZone;
 use entities::Purchase;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::Deserialize;
 use sqlx::{postgres::PgPoolOptions, PgPool};
+use std::{net::SocketAddr, time::Duration};
+use tower_http::{trace::TraceLayer, timeout::{Timeout, TimeoutLayer}};
 use tracing::info;
-use std::net::SocketAddr;
-use tower_http::trace::TraceLayer;
 use uuid::Uuid;
 
 use crate::entities::Listing;
@@ -85,11 +85,14 @@ async fn main() -> color_eyre::Result<()> {
         .route("/item/:id", get(get_item_listings))
         .route("/item/:id/purchases", get(get_item_purchases))
         .layer(TraceLayer::new_for_http())
+        .layer(TimeoutLayer::new(Duration::from_secs(5)))
         .with_state(state);
 
     // run our app with hyper
     // `axum::Server` is a re-export of `hyper::Server`
-    let port = std::env::var("PORT").unwrap_or_else(|_| "3000".to_string()).parse()?;
+    let port = std::env::var("PORT")
+        .unwrap_or_else(|_| "3000".to_string())
+        .parse()?;
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     tracing::info!("listening on {}", addr);
     axum::Server::bind(&addr)
@@ -171,7 +174,10 @@ async fn upload_history(
 ) -> Result<(), AppError> {
     let id = Uuid::new_v4();
     let date = chrono::Utc::now();
-    info!("Received purchase history upload for item {}", payload.item_id);
+    info!(
+        "Received purchase history upload for item {}",
+        payload.item_id
+    );
 
     sqlx::query!(
         "INSERT INTO upload (id, uploader_id, upload_time, world_id, item_id, upload_type)
@@ -242,18 +248,38 @@ async fn get_item_listings(
     State(state): State<AppState>,
     Path(item_id): Path<i32>,
 ) -> Result<Json<Vec<Listing>>, AppError> {
-    let listings = sqlx::query_as!(Listing, "SELECT * FROM listing WHERE item_id = $1 ORDER BY world_id ASC, price_per_unit ASC", item_id)
-        .fetch_all(&state.pool).await?;
+    let listings = sqlx::query_as!(
+        Listing,
+        "SELECT * FROM listing WHERE item_id = $1 ORDER BY world_id ASC, price_per_unit ASC",
+        item_id
+    )
+    .fetch_all(&state.pool)
+    .await?;
 
     Ok(Json(listings))
+}
+
+#[derive(Debug, Deserialize)]
+struct PurchasesQuery {
+    pub page: Option<i64>,
 }
 
 async fn get_item_purchases(
     State(state): State<AppState>,
     Path(item_id): Path<i32>,
+    Query(query): Query<PurchasesQuery>
 ) -> Result<Json<Vec<Purchase>>, AppError> {
-    let listings = sqlx::query_as!(Purchase, "SELECT * FROM purchase WHERE item_id = $1 ORDER BY world_id ASC, purchase_time DESC", item_id)
-        .fetch_all(&state.pool).await?;
+    let page = query.page.unwrap_or(0);
+
+    let listings = sqlx::query_as!(
+        Purchase,
+        "SELECT * FROM purchase WHERE item_id = $1 ORDER BY world_id ASC, purchase_time DESC OFFSET $2 LIMIT $3",
+        item_id,
+        page * 250,
+        250
+    )
+    .fetch_all(&state.pool)
+    .await?;
 
     Ok(Json(listings))
 }
