@@ -1,5 +1,11 @@
 # market.xivhub.org api
 
+This api is used to upload and list market data from FFXIV.
+
+You can use the dalamud plugin to automatically upload data: https://github.com/ZhyraPlugins/MarketUploader
+
+
+Current api:
 
 ```
 POST /upload

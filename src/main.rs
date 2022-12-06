@@ -80,6 +80,7 @@ async fn main() -> color_eyre::Result<()> {
 
     // build our application with a route
     let app = Router::new()
+        .route("/", get(home))
         .route("/history", post(upload_history))
         .route("/upload", post(upload))
         .route("/item/:id", get(get_item_listings))
@@ -94,12 +95,16 @@ async fn main() -> color_eyre::Result<()> {
         .unwrap_or_else(|_| "3000".to_string())
         .parse()?;
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    tracing::info!("listening on {}", addr);
+    tracing::info!("listening on http://{}", addr);
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
         .await?;
 
     Ok(())
+}
+
+async fn home() -> &'static str {
+    include_str!("../README.md")
 }
 
 async fn upload(
