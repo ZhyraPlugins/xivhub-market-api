@@ -20,7 +20,13 @@ GET /item/:id
 GET /item/:id/purchases
 # Get item purchases
 
-Query:
+- Query
 page - Starting from 0, max entries per page: 250
+
+GET /stats
+# General stats
+
+GET /last_uploads
+# Last 250 uploads
 
 ```

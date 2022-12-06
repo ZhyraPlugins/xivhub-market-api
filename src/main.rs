@@ -1,16 +1,19 @@
 use axum::{
-    extract::{Path, State, Query},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
 };
 use chrono::TimeZone;
-use entities::Purchase;
-use serde::Deserialize;
+use entities::{Purchase, Upload};
+use serde::{Deserialize, Serialize};
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::{net::SocketAddr, time::Duration};
-use tower_http::{trace::TraceLayer, timeout::{Timeout, TimeoutLayer}};
+use tower_http::{
+    timeout::{Timeout, TimeoutLayer},
+    trace::TraceLayer,
+};
 use tracing::info;
 use uuid::Uuid;
 
@@ -81,6 +84,8 @@ async fn main() -> color_eyre::Result<()> {
     // build our application with a route
     let app = Router::new()
         .route("/", get(home))
+        .route("/last_uploads", get(last_uploads))
+        .route("/stats", get(stats))
         .route("/history", post(upload_history))
         .route("/upload", post(upload))
         .route("/item/:id", get(get_item_listings))
@@ -246,6 +251,62 @@ async fn upload_history(
     Ok(())
 }
 
+async fn last_uploads(State(state): State<AppState>) -> Result<Json<Vec<Upload>>, AppError> {
+    let mut uploads = sqlx::query_as!(
+        Upload,
+        "SELECT * FROM upload ORDER BY upload_time DESC LIMIT 250"
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    // hash uploader_ids for now until i know if they are sensitive.
+    for upload in &mut uploads {
+        let up = sha256::digest(upload.uploader_id.as_str());
+        upload.uploader_id = up;
+    }
+
+    Ok(Json(uploads))
+}
+
+#[derive(Debug, Serialize)]
+struct Stats {
+    pub total_uploads: i64,
+    pub active_listings: i64,
+    pub total_purchases: i64,
+    pub unique_uploaders: i64,
+    pub unique_items: i64,
+}
+
+async fn stats(State(state): State<AppState>) -> Result<Json<Stats>, AppError> {
+    let uploads = sqlx::query!("SELECT COUNT(*) from upload")
+        .fetch_one(&state.pool)
+        .await?;
+
+    let active_listings = sqlx::query!("SELECT COUNT(*) from listing")
+        .fetch_one(&state.pool)
+        .await?;
+
+    let purchases = sqlx::query!("SELECT COUNT(*) from purchase")
+        .fetch_one(&state.pool)
+        .await?;
+
+    let unique_uploaders = sqlx::query!("SELECT COUNT(DISTINCT uploader_id) from upload")
+        .fetch_one(&state.pool)
+        .await?;
+
+    let unique_items = sqlx::query!("SELECT COUNT(DISTINCT item_id) from listing")
+        .fetch_one(&state.pool)
+        .await?;
+
+    Ok(Json(Stats {
+        total_uploads: uploads.count.unwrap_or(0),
+        active_listings: active_listings.count.unwrap_or(0),
+        total_purchases: purchases.count.unwrap_or(0),
+        unique_uploaders: unique_uploaders.count.unwrap_or(0),
+        unique_items: unique_items.count.unwrap_or(0),
+    }))
+}
+
 #[derive(Debug, Deserialize)]
 struct ListingsQuery {}
 
@@ -272,7 +333,7 @@ struct PurchasesQuery {
 async fn get_item_purchases(
     State(state): State<AppState>,
     Path(item_id): Path<i32>,
-    Query(query): Query<PurchasesQuery>
+    Query(query): Query<PurchasesQuery>,
 ) -> Result<Json<Vec<Purchase>>, AppError> {
     let page = query.page.unwrap_or(0);
 
