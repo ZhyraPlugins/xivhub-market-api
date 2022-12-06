@@ -1,21 +1,26 @@
 use axum::{
-    extract::{FromRef, State},
+    extract::{FromRef, Path, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
 };
 use chrono::TimeZone;
+use entities::Purchase;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use sqlx::{sqlite::SqlitePoolOptions, SqlitePool};
+use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::net::SocketAddr;
 use tower_http::trace::TraceLayer;
 use uuid::Uuid;
 
+use crate::entities::Listing;
+
+mod entities;
+
 #[derive(Debug, Deserialize)]
 struct UploadRequest<T> {
-    pub world_id: u32,
-    pub item_id: u32,
+    pub world_id: i32,
+    pub item_id: i32,
     pub uploader_id: String,
     pub listings: Vec<T>,
 }
@@ -31,8 +36,8 @@ struct UploadRequestListing {
     pub creator_name: String,
     pub on_mannequin: bool,
     pub last_review_time: i64,
-    pub price_per_unit: u32,
-    pub quantity: u32,
+    pub price_per_unit: i32,
+    pub quantity: i32,
     pub retainer_city: i32,
     pub materia: Vec<ItemMateria>,
 }
@@ -49,13 +54,13 @@ struct UploadHistoryRequestListing {
     pub buyer_name: String,
     pub on_mannequin: bool,
     pub purchase_time: i64,
-    pub price_per_unit: u32,
-    pub quantity: u32,
+    pub price_per_unit: i32,
+    pub quantity: i32,
 }
 
 #[derive(Debug, Clone)]
 struct AppState {
-    pool: SqlitePool,
+    pool: PgPool,
 }
 
 #[tokio::main]
@@ -65,8 +70,8 @@ async fn main() -> color_eyre::Result<()> {
     // initialize tracing
     tracing_subscriber::fmt::init();
 
-    let pool = SqlitePoolOptions::new()
-        .max_connections(5)
+    let pool = PgPoolOptions::new()
+        .max_connections(30)
         .connect(&std::env::var("DATABASE_URL")?)
         .await?;
 
@@ -76,6 +81,8 @@ async fn main() -> color_eyre::Result<()> {
     let app = Router::new()
         .route("/history", post(upload_history))
         .route("/upload", post(upload))
+        .route("/item/:id", get(get_item_listings))
+        .route("/item/:id/purchases", get(get_item_purchases))
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
@@ -94,12 +101,12 @@ async fn upload(
     State(state): State<AppState>,
     Json(payload): Json<UploadRequest<UploadRequestListing>>,
 ) -> Result<(), AppError> {
-    let id = Uuid::new_v4().to_string();
+    let id = Uuid::new_v4();
     let date = chrono::Utc::now();
 
     sqlx::query!(
         "INSERT INTO upload (id, uploader_id, upload_time, world_id, item_id, upload_type)
-        VALUES (?,?,?,?,?,?)",
+        VALUES ($1,$2,$3,$4,$5,$6)",
         id,
         payload.uploader_id,
         date,
@@ -111,25 +118,27 @@ async fn upload(
     .await?;
 
     // for now, dont keep a history of previous listings.
-    sqlx::query!("DELETE FROM listing WHERE item_id = ?", payload.item_id)
-        .execute(&state.pool)
-        .await?;
+    sqlx::query!(
+        "DELETE FROM listing WHERE item_id = $1 AND world_id =$2",
+        payload.item_id,
+        payload.world_id
+    )
+    .execute(&state.pool)
+    .await?;
 
     for listing in payload.listings {
-        let internal_id = Uuid::new_v4().to_string();
         let date = chrono::Utc
             .timestamp_opt(listing.last_review_time, 0)
             .unwrap();
         let materia_count = listing.materia.len() as i32;
         sqlx::query!(
             "INSERT INTO listing (
-                id, upload_id, world_id, item_id, listing_id, seller_id,
+                upload_id, world_id, item_id, listing_id, seller_id,
                 retainer_id, retainer_name, creator_id, creator_name,
                 last_review_time, price_per_unit, quantity,
                 retainer_city_id, materia_count, hq)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
             ",
-            internal_id,
             id,
             payload.world_id,
             payload.item_id,
@@ -157,12 +166,12 @@ async fn upload_history(
     State(state): State<AppState>,
     Json(payload): Json<UploadRequest<UploadHistoryRequestListing>>,
 ) -> Result<(), AppError> {
-    let id = Uuid::new_v4().to_string();
+    let id = Uuid::new_v4();
     let date = chrono::Utc::now();
 
     sqlx::query!(
         "INSERT INTO upload (id, uploader_id, upload_time, world_id, item_id, upload_type)
-        VALUES (?,?,?,?,?,?)",
+        VALUES ($1,$2,$3,$4,$5,$6)",
         id,
         payload.uploader_id,
         date,
@@ -174,8 +183,6 @@ async fn upload_history(
     .await?;
 
     if !payload.listings.is_empty() {
-         // delete records more recent than the last purchase time
-
         let oldest_purchase = payload
             .listings
             .iter()
@@ -186,9 +193,11 @@ async fn upload_history(
 
         let trans = state.pool.begin().await?;
 
+        // delete records more recent than the last purchase time
         sqlx::query!(
-            "DELETE FROM history_listing WHERE item_id = ? AND purchase_time >= ?",
+            "DELETE FROM purchase WHERE item_id = $1 AND world_id = $2 AND purchase_time >= $3",
             payload.item_id,
+            payload.world_id,
             oldest_date
         )
         .execute(&state.pool)
@@ -198,9 +207,9 @@ async fn upload_history(
             let date = chrono::Utc.timestamp_opt(listing.purchase_time, 0).unwrap();
 
             sqlx::query!(
-                "INSERT INTO history_listing (
+                "INSERT INTO purchase (
                     upload_id, item_id, world_id, buyer_name, hq, on_mannequin, purchase_time, quantity, price_per_unit)
-                VALUES (?,?,?,?,?,?,?,?,?)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
                 ",
                 id,
                 payload.item_id,
@@ -220,6 +229,29 @@ async fn upload_history(
     }
 
     Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+struct ListingsQuery {}
+
+async fn get_item_listings(
+    State(state): State<AppState>,
+    Path(item_id): Path<i32>,
+) -> Result<Json<Vec<Listing>>, AppError> {
+    let listings = sqlx::query_as!(Listing, "SELECT * FROM listing WHERE item_id = $1 ORDER BY world_id ASC, price_per_unit ASC", item_id)
+        .fetch_all(&state.pool).await?;
+
+    Ok(Json(listings))
+}
+
+async fn get_item_purchases(
+    State(state): State<AppState>,
+    Path(item_id): Path<i32>,
+) -> Result<Json<Vec<Purchase>>, AppError> {
+    let listings = sqlx::query_as!(Purchase, "SELECT * FROM purchase WHERE item_id = $1 ORDER BY world_id ASC, purchase_time DESC", item_id)
+        .fetch_all(&state.pool).await?;
+
+    Ok(Json(listings))
 }
 
 /*
