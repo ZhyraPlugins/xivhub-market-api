@@ -9,6 +9,7 @@ use chrono::TimeZone;
 use entities::Purchase;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sqlx::{postgres::PgPoolOptions, PgPool};
+use tracing::info;
 use std::net::SocketAddr;
 use tower_http::trace::TraceLayer;
 use uuid::Uuid;
@@ -88,8 +89,9 @@ async fn main() -> color_eyre::Result<()> {
 
     // run our app with hyper
     // `axum::Server` is a re-export of `hyper::Server`
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
-    tracing::debug!("listening on {}", addr);
+    let port = std::env::var("PORT").unwrap_or_else(|_| "3000".to_string()).parse()?;
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    tracing::info!("listening on {}", addr);
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
         .await?;
@@ -103,6 +105,7 @@ async fn upload(
 ) -> Result<(), AppError> {
     let id = Uuid::new_v4();
     let date = chrono::Utc::now();
+    info!("Received upload for item {}", payload.item_id);
 
     sqlx::query!(
         "INSERT INTO upload (id, uploader_id, upload_time, world_id, item_id, upload_type)
@@ -168,6 +171,7 @@ async fn upload_history(
 ) -> Result<(), AppError> {
     let id = Uuid::new_v4();
     let date = chrono::Utc::now();
+    info!("Received purchase history upload for item {}", payload.item_id);
 
     sqlx::query!(
         "INSERT INTO upload (id, uploader_id, upload_time, world_id, item_id, upload_type)
