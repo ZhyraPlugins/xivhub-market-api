@@ -20,4 +20,7 @@ GET /item/:id
 GET /item/:id/purchases
 # Get item purchases
 
+Query:
+page - Starting from 0, max entries per page: 250
+
 ```
