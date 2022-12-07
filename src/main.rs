@@ -7,10 +7,12 @@ use axum::{
 };
 use chrono::TimeZone;
 use entities::{Purchase, Upload};
+use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::{net::SocketAddr, time::Duration};
 use tower_http::{
+    cors::{Any, CorsLayer},
     timeout::{Timeout, TimeoutLayer},
     trace::TraceLayer,
 };
@@ -67,6 +69,8 @@ struct AppState {
     pool: PgPool,
 }
 
+// TODO: remove listings after they are x hours older, 48?
+
 #[tokio::main]
 async fn main() -> color_eyre::Result<()> {
     dotenvy::dotenv().ok();
@@ -92,6 +96,11 @@ async fn main() -> color_eyre::Result<()> {
         .route("/item/:id/purchases", get(get_item_purchases))
         .layer(TraceLayer::new_for_http())
         .layer(TimeoutLayer::new(Duration::from_secs(5)))
+        .layer(
+            CorsLayer::new()
+                .allow_methods([Method::GET, Method::POST])
+                .allow_origin(Any),
+        )
         .with_state(state);
 
     // run our app with hyper
