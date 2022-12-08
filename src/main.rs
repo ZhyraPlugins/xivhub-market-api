@@ -92,6 +92,7 @@ async fn main() -> color_eyre::Result<()> {
         .route("/stats", get(stats))
         .route("/history", post(upload_history))
         .route("/upload", post(upload))
+        .route("/item", get(list_items))
         .route("/item/:id", get(get_item_listings))
         .route("/item/:id/purchases", get(get_item_purchases))
         .layer(TraceLayer::new_for_http())
@@ -352,6 +353,42 @@ async fn get_item_purchases(
         item_id,
         page * 250,
         250
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(Json(listings))
+}
+
+#[derive(Debug, Deserialize)]
+struct ItemListQuery {
+    pub page: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+struct ItemList {
+    pub item_id: i32,
+    pub listings: Option<i64>,
+}
+
+async fn list_items(
+    State(state): State<AppState>,
+    Query(query): Query<ItemListQuery>,
+) -> Result<Json<Vec<ItemList>>, AppError> {
+    let page = query.page.unwrap_or(0);
+
+    let listings = sqlx::query_as!(
+        ItemList,
+        "SELECT 
+            item_id, 
+            count(item_id) as listings 
+        FROM listing 
+        GROUP BY item_id 
+        ORDER BY item_id ASC
+        OFFSET $1
+        LIMIT 1000
+        ",
+        page * 1000
     )
     .fetch_all(&state.pool)
     .await?;

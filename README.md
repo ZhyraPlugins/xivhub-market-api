@@ -14,6 +14,12 @@ POST /upload
 POST /history
 # Upload purchases
 
+GET /item
+# Get list of available items
+
+- Query
+page - Starting from 0, entries per page: 1000
+
 GET /item/:id
 # Get item listings
 
@@ -21,7 +27,7 @@ GET /item/:id/purchases
 # Get item purchases
 
 - Query
-page - Starting from 0, max entries per page: 250
+page - Starting from 0, entries per page: 250
 
 GET /stats
 # General stats
