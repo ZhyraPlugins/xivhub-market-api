@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use serde::{Serialize};
+use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 
 #[derive(Debug, Serialize)]
@@ -42,4 +42,18 @@ pub struct Purchase {
     pub purchase_time: DateTime<Utc>,
     pub quantity: i32,
     pub price_per_unit: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ItemInfo {
+    pub item_id: i32,
+    pub name: String,
+    pub icon: String,
+    pub icon_hd: String,
+    pub description: String,
+    pub item_kind_name: String,
+    pub item_kind_id: i32,
+    pub item_search_category: i32,
+    pub item_search_category_iconhd: String,
+    pub item_search_category_name: String,
 }
