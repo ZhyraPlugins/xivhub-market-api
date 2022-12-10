@@ -511,13 +511,28 @@ struct ItemList {
     pub listings: Option<i64>,
 }
 
+#[derive(Debug, Serialize)]
+struct ListItemsResponse {
+    items: Vec<ItemList>,
+    page: i64,
+    total_pages: i64,
+}
+
 async fn list_items(
     State(state): State<AppState>,
     Query(query): Query<ItemListQuery>,
-) -> Result<Json<Vec<ItemList>>, AppError> {
+) -> Result<Json<ListItemsResponse>, AppError> {
     let page = query.page.unwrap_or(0);
 
-    let listings = {
+    let total_items = {
+        if let Some(search) = &query.search {
+            sqlx::query!("SELECT COUNT(*) from item_info WHERE LOWER(name) LIKE LOWER($1)", search).fetch_one(&state.pool).await?.count
+        } else {
+            sqlx::query!("SELECT COUNT(*) from item_info").fetch_one(&state.pool).await?.count
+        }
+    }.unwrap_or(0);
+
+    let items = {
         if let Some(search) = query.search {
             sqlx::query_as!(
                 ItemList,
@@ -542,14 +557,18 @@ async fn list_items(
                 OFFSET $1
                 LIMIT 100
                 ",
-                page * 100
+                page * 50
             )
             .fetch_all(&state.pool)
             .await?
         }
     };
 
-    Ok(Json(listings))
+    Ok(Json(ListItemsResponse{
+        items,
+        page,
+        total_pages: total_items / 50,
+    }))
 }
 
 /*
