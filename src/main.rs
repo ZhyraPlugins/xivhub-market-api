@@ -521,8 +521,8 @@ async fn list_items(
         if let Some(search) = query.search {
             sqlx::query_as!(
                 ItemList,
-                "SELECT *, (SELECT COUNT(*) FROM listing l WHERE l.item_id = item_id) as listings
-                FROM item_info
+                "SELECT i.*, (SELECT COUNT(*) FROM listing l WHERE l.item_id = i.item_id) as listings
+                FROM item_info i
                 WHERE LOWER(name) LIKE LOWER($1)
                 ORDER BY item_id ASC
                 OFFSET $2
@@ -536,8 +536,8 @@ async fn list_items(
         } else {
             sqlx::query_as!(
                 ItemList,
-                "SELECT *, (SELECT COUNT(*) FROM listing l WHERE l.item_id = item_id) as listings
-                FROM item_info
+                "SELECT i.*, (SELECT COUNT(*) FROM listing l WHERE l.item_id = i.item_id) as listings
+                FROM item_info i
                 ORDER BY item_id ASC
                 OFFSET $1
                 LIMIT 100
