@@ -192,6 +192,7 @@ async fn fetch_item_info(item_id: i32, db: &PgPool) -> Result<ItemInfo, AppError
         let private_key = std::env::var("XIVAPI_PRIVATE_KEY")?;
         let data = reqwest::get(format!("https://xivapi.com/item/{item_id}?private_key={private_key}&columns=Name,Icon,IconHD,Description,ItemKind.Name,ItemKind.ID,ItemSearchCategory.Category,ItemSearchCategory.IconHD,ItemSearchCategory.Name")).await?;
         let res: XivApiItemInfo = data.json().await?;
+        info!("Fetched info for item {item_id}");
 
         sqlx::query!("INSERT INTO item_info (item_id, name, icon, icon_hd, description, item_kind_name, item_kind_id,
                         item_search_category, item_search_category_iconhd, item_search_category_name)
@@ -366,6 +367,12 @@ async fn upload_history(
 
         trans.commit().await?;
     }
+
+    tokio::spawn(async move {
+        if let Err(e) = fetch_item_info(payload.item_id, &state.pool).await {
+            error!("Error fetching item info: {:?}", e);
+        }
+    });
 
     Ok(())
 }
