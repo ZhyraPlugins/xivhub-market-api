@@ -10,6 +10,8 @@ pub struct Upload {
     pub world_id: i32,
     pub item_id: i32,
     pub upload_type: i32,
+    pub name: String,
+    pub icon: String,
 }
 
 #[derive(Debug, Serialize)]
