@@ -13,7 +13,7 @@ use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::{net::SocketAddr, time::Duration};
 use tower_http::{
     cors::{Any, CorsLayer},
-    timeout::{Timeout, TimeoutLayer},
+    timeout::TimeoutLayer,
     trace::TraceLayer,
 };
 use tracing::{error, info};
@@ -486,18 +486,28 @@ async fn get_item_purchases(
     Ok(Json(PurchasesResponse {
         item,
         purchases,
-        page
+        page,
     }))
 }
 
 #[derive(Debug, Deserialize)]
 struct ItemListQuery {
     pub page: Option<i64>,
+    pub search: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 struct ItemList {
     pub item_id: i32,
+    pub name: String,
+    pub icon: String,
+    pub icon_hd: String,
+    pub description: String,
+    pub item_kind_name: String,
+    pub item_kind_id: i32,
+    pub item_search_category: i32,
+    pub item_search_category_iconhd: String,
+    pub item_search_category_name: String,
     pub listings: Option<i64>,
 }
 
@@ -507,21 +517,37 @@ async fn list_items(
 ) -> Result<Json<Vec<ItemList>>, AppError> {
     let page = query.page.unwrap_or(0);
 
-    let listings = sqlx::query_as!(
-        ItemList,
-        "SELECT 
-            item_id, 
-            count(item_id) as listings 
-        FROM listing 
-        GROUP BY item_id 
-        ORDER BY item_id ASC
-        OFFSET $1
-        LIMIT 25
-        ",
-        page * 25
-    )
-    .fetch_all(&state.pool)
-    .await?;
+    let listings = {
+        if let Some(search) = query.search {
+            sqlx::query_as!(
+                ItemList,
+                "SELECT *, (SELECT COUNT(*) FROM listing l WHERE l.item_id = item_id) as listings
+                FROM item_info
+                WHERE LOWER(name) LIKE LOWER($1)
+                ORDER BY item_id ASC
+                OFFSET $2
+                LIMIT 100
+                ",
+                format!("%{search}%"),
+                page * 100
+            )
+            .fetch_all(&state.pool)
+            .await?
+        } else {
+            sqlx::query_as!(
+                ItemList,
+                "SELECT *, (SELECT COUNT(*) FROM listing l WHERE l.item_id = item_id) as listings
+                FROM item_info
+                ORDER BY item_id ASC
+                OFFSET $1
+                LIMIT 100
+                ",
+                page * 100
+            )
+            .fetch_all(&state.pool)
+            .await?
+        }
+    };
 
     Ok(Json(listings))
 }
