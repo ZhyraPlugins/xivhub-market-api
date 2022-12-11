@@ -16,7 +16,6 @@ pub struct Upload {
 
 #[derive(Debug, Serialize)]
 pub struct Listing {
-    pub listing_id: i64,
     pub upload_id: Uuid,
     pub world_id: i32,
     pub item_id: i32,

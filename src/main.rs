@@ -33,7 +33,6 @@ struct UploadRequest<T> {
 
 #[derive(Debug, Deserialize)]
 struct UploadRequestListing {
-    pub listing_id: i64,
     pub hq: bool,
     pub seller_id: String,
     pub retainer_id: String,
@@ -263,16 +262,15 @@ async fn upload(
         let materia_count = listing.materia.len() as i32;
         sqlx::query!(
             "INSERT INTO listing (
-                upload_id, world_id, item_id, listing_id, seller_id,
+                upload_id, world_id, item_id, seller_id,
                 retainer_id, retainer_name, creator_id, creator_name,
                 last_review_time, price_per_unit, quantity,
                 retainer_city_id, materia_count, hq)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
             ",
             id,
             payload.world_id,
             payload.item_id,
-            listing.listing_id,
             listing.seller_id,
             listing.retainer_id,
             listing.retainer_name,
