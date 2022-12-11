@@ -5,7 +5,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use chrono::TimeZone;
+use chrono::{TimeZone, Date, Utc, DateTime};
 use entities::{ItemInfo, Purchase, Upload};
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
@@ -401,6 +401,13 @@ struct Stats {
     pub total_purchases: i64,
     pub unique_uploaders: i64,
     pub unique_items: i64,
+    pub uploads_per_day: Vec<DayCount>
+}
+
+#[derive(Debug, Serialize)]
+struct DayCount {
+    pub count: Option<i64>,
+    pub day: Option<DateTime<Utc>>
 }
 
 async fn stats(State(state): State<AppState>) -> Result<Json<Stats>, AppError> {
@@ -424,12 +431,18 @@ async fn stats(State(state): State<AppState>) -> Result<Json<Stats>, AppError> {
         .fetch_one(&state.pool)
         .await?;
 
+    let uploads_per_day = sqlx::query_as!(DayCount, 
+        "SELECT COUNT(*) as count, DATE_TRUNC('day', upload_time) as day from upload GROUP BY DATE_TRUNC('day', upload_time) ORDER BY day DESC LIMIT 30")
+        .fetch_all(&state.pool)
+        .await?;
+
     Ok(Json(Stats {
         total_uploads: uploads.count.unwrap_or(0),
         active_listings: active_listings.count.unwrap_or(0),
         total_purchases: purchases.count.unwrap_or(0),
         unique_uploaders: unique_uploaders.count.unwrap_or(0),
         unique_items: unique_items.count.unwrap_or(0),
+        uploads_per_day
     }))
 }
 
