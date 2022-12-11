@@ -401,7 +401,8 @@ struct Stats {
     pub total_purchases: i64,
     pub unique_uploaders: i64,
     pub unique_items: i64,
-    pub uploads_per_day: Vec<DayCount>
+    pub uploads_per_day: Vec<DayCount>,
+    pub purchase_by_day: Vec<DayCount>
 }
 
 #[derive(Debug, Serialize)]
@@ -432,7 +433,12 @@ async fn stats(State(state): State<AppState>) -> Result<Json<Stats>, AppError> {
         .await?;
 
     let uploads_per_day = sqlx::query_as!(DayCount, 
-        "SELECT COUNT(*) as count, DATE_TRUNC('day', upload_time) as day from upload GROUP BY DATE_TRUNC('day', upload_time) ORDER BY day DESC LIMIT 30")
+        "SELECT COUNT(*) as count, DATE_TRUNC('day', upload_time) as day from upload GROUP BY DATE_TRUNC('day', upload_time) ORDER BY day DESC LIMIT 15")
+        .fetch_all(&state.pool)
+        .await?;
+
+    let purchase_by_day = sqlx::query_as!(DayCount, 
+        "SELECT COUNT(*) as count, DATE_TRUNC('day', purchase_time) as day from purchase GROUP BY DATE_TRUNC('day', purchase_time) ORDER BY day DESC LIMIT 15")
         .fetch_all(&state.pool)
         .await?;
 
@@ -442,7 +448,8 @@ async fn stats(State(state): State<AppState>) -> Result<Json<Stats>, AppError> {
         total_purchases: purchases.count.unwrap_or(0),
         unique_uploaders: unique_uploaders.count.unwrap_or(0),
         unique_items: unique_items.count.unwrap_or(0),
-        uploads_per_day
+        uploads_per_day,
+        purchase_by_day
     }))
 }
 
