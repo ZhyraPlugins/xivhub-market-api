@@ -502,7 +502,7 @@ async fn get_item_purchases(
 
     let purchases = sqlx::query_as!(
         Purchase,
-        "SELECT * FROM purchase WHERE item_id = $1 ORDER BY world_id ASC, purchase_time DESC OFFSET $2 LIMIT $3",
+        "SELECT * FROM purchase WHERE item_id = $1 ORDER BY purchase_time DESC OFFSET $2 LIMIT $3",
         item_id,
         page * 250,
         250
