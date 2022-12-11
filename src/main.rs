@@ -5,7 +5,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use chrono::{TimeZone, Date, Utc, DateTime};
+use chrono::{Date, DateTime, TimeZone, Utc};
 use entities::{ItemInfo, Purchase, Upload};
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
@@ -402,13 +402,13 @@ struct Stats {
     pub unique_uploaders: i64,
     pub unique_items: i64,
     pub uploads_per_day: Vec<DayCount>,
-    pub purchase_by_day: Vec<DayCount>
+    pub purchase_by_day: Vec<DayCount>,
 }
 
 #[derive(Debug, Serialize)]
 struct DayCount {
     pub count: Option<i64>,
-    pub day: Option<DateTime<Utc>>
+    pub day: Option<DateTime<Utc>>,
 }
 
 async fn stats(State(state): State<AppState>) -> Result<Json<Stats>, AppError> {
@@ -432,15 +432,19 @@ async fn stats(State(state): State<AppState>) -> Result<Json<Stats>, AppError> {
         .fetch_one(&state.pool)
         .await?;
 
-    let uploads_per_day = sqlx::query_as!(DayCount, 
+    let mut uploads_per_day = sqlx::query_as!(DayCount,
         "SELECT COUNT(*) as count, DATE_TRUNC('day', upload_time) as day from upload GROUP BY DATE_TRUNC('day', upload_time) ORDER BY day DESC LIMIT 15")
         .fetch_all(&state.pool)
         .await?;
 
-    let purchase_by_day = sqlx::query_as!(DayCount, 
+    uploads_per_day.reverse();
+
+    let mut purchase_by_day = sqlx::query_as!(DayCount,
         "SELECT COUNT(*) as count, DATE_TRUNC('day', purchase_time) as day from purchase GROUP BY DATE_TRUNC('day', purchase_time) ORDER BY day DESC LIMIT 15")
         .fetch_all(&state.pool)
         .await?;
+
+    purchase_by_day.reverse();
 
     Ok(Json(Stats {
         total_uploads: uploads.count.unwrap_or(0),
@@ -449,7 +453,7 @@ async fn stats(State(state): State<AppState>) -> Result<Json<Stats>, AppError> {
         unique_uploaders: unique_uploaders.count.unwrap_or(0),
         unique_items: unique_items.count.unwrap_or(0),
         uploads_per_day,
-        purchase_by_day
+        purchase_by_day,
     }))
 }
 
@@ -553,11 +557,21 @@ async fn list_items(
 
     let total_items = {
         if let Some(search) = &query.search {
-            sqlx::query!("SELECT COUNT(*) from item_info WHERE LOWER(name) LIKE LOWER($1)", search).fetch_one(&state.pool).await?.count
+            sqlx::query!(
+                "SELECT COUNT(*) from item_info WHERE LOWER(name) LIKE LOWER($1)",
+                search
+            )
+            .fetch_one(&state.pool)
+            .await?
+            .count
         } else {
-            sqlx::query!("SELECT COUNT(*) from item_info").fetch_one(&state.pool).await?.count
+            sqlx::query!("SELECT COUNT(*) from item_info")
+                .fetch_one(&state.pool)
+                .await?
+                .count
         }
-    }.unwrap_or(0);
+    }
+    .unwrap_or(0);
 
     let items = {
         if let Some(search) = query.search {
@@ -591,7 +605,7 @@ async fn list_items(
         }
     };
 
-    Ok(Json(ListItemsResponse{
+    Ok(Json(ListItemsResponse {
         items,
         page,
         total_pages: total_items / 50,
