@@ -5,7 +5,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use chrono::{Date, DateTime, TimeZone, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use entities::{ItemInfo, Purchase, Upload};
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
@@ -123,6 +123,7 @@ async fn main() -> color_eyre::Result<()> {
         .route("/item", get(list_items))
         .route("/item/:id", get(get_item_listings))
         .route("/item/:id/purchases", get(get_item_purchases))
+        .route("/item/:id/uploads", get(get_item_upload_dates))
         .layer(TraceLayer::new_for_http())
         .layer(TimeoutLayer::new(Duration::from_secs(5)))
         .layer(
@@ -517,6 +518,28 @@ async fn get_item_purchases(
         purchases,
         page,
     }))
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct ItemUploadDates {
+    pub world_id: i32,
+    pub upload_time: Option<DateTime<Utc>>,
+}
+
+/// returns the last upload dates per world for an item
+async fn get_item_upload_dates(
+    State(state): State<AppState>,
+    Path(item_id): Path<i32>,
+) -> Result<Json<Vec<ItemUploadDates>>, AppError> {
+    let uploads = sqlx::query_as!(
+        ItemUploadDates,
+        " SELECT world_id, MAX(upload_time) as upload_time FROM upload WHERE item_id = $1 GROUP BY world_id, item_id",
+        item_id
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(Json(uploads))
 }
 
 #[derive(Debug, Deserialize)]
