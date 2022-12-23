@@ -36,3 +36,14 @@ GET /last_uploads
 # Last 250 uploads
 
 ```
+
+## Setup
+
+Needs the following env vars:
+
+```
+DATABASE_URL=postgres://user:pass@localhost/dbname
+RUST_LOG=debug,sqlx=error,hyper=info
+PORT=3000
+XIVAPI_PRIVATE_KEY="xivapi.com key"
+```
