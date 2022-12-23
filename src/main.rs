@@ -31,6 +31,7 @@ struct UploadRequest<T> {
     pub listings: Vec<T>,
 }
 
+#[allow(unused)]
 #[derive(Debug, Deserialize)]
 struct UploadRequestListing {
     pub hq: bool,
@@ -47,6 +48,7 @@ struct UploadRequestListing {
     pub materia: Vec<ItemMateria>,
 }
 
+#[allow(unused)]
 #[derive(Debug, Deserialize)]
 struct ItemMateria {
     pub slot_id: i32,
