@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-axum = { version = "0.6.1", features = ["headers"] }
+axum = { version = "0.6.2", features = ["headers"] }
 sqlx = { version = "0.6.2", default-features = false, features = ["runtime-tokio-rustls", "postgres", "macros", "chrono", "offline", "migrate", "uuid"] }
 moka = { version = "0.9.6", features = ["future"] }
 color-eyre = "0.6.2"
