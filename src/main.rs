@@ -5,12 +5,17 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use axum_prometheus::PrometheusMetricLayer;
 use chrono::{DateTime, TimeZone, Utc};
 use entities::{ItemInfo, Purchase, Upload};
+use metrics::{histogram, increment_counter};
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use sqlx::{postgres::PgPoolOptions, PgPool};
-use std::{net::SocketAddr, time::Duration};
+use std::{
+    net::SocketAddr,
+    time::{Duration, Instant},
+};
 use tower_http::{
     cors::{Any, CorsLayer},
     timeout::TimeoutLayer,
@@ -79,6 +84,8 @@ async fn main() -> color_eyre::Result<()> {
     // initialize tracing
     tracing_subscriber::fmt::init();
 
+    let (prometheus_layer, metrics_handle) = PrometheusMetricLayer::pair();
+
     let pool = PgPoolOptions::new()
         .max_connections(30)
         .connect(&std::env::var("DATABASE_URL")?)
@@ -126,6 +133,7 @@ async fn main() -> color_eyre::Result<()> {
         .route("/item/:id", get(get_item_listings))
         .route("/item/:id/purchases", get(get_item_purchases))
         .route("/item/:id/uploads", get(get_item_upload_dates))
+        .route("/metrics", get(|| async move { metrics_handle.render() }))
         .layer(TraceLayer::new_for_http())
         .layer(TimeoutLayer::new(Duration::from_secs(5)))
         .layer(
@@ -133,6 +141,7 @@ async fn main() -> color_eyre::Result<()> {
                 .allow_methods([Method::GET, Method::POST])
                 .allow_origin(Any),
         )
+        .layer(prometheus_layer)
         .with_state(state);
 
     // run our app with hyper
@@ -210,7 +219,7 @@ async fn fetch_item_info(item_id: i32, db: &PgPool) -> Result<ItemInfo, AppError
                     res.item_search_category.icon_hd,
                     res.item_search_category.name,
                 )
-                        .execute(db).await?;
+                        .execute(db).await.ok();
 
         let res = sqlx::query_as!(
             ItemInfo,
@@ -235,6 +244,8 @@ async fn upload(
     let id = Uuid::new_v4();
     let date = chrono::Utc::now();
     info!("Received upload for item {}", payload.item_id);
+
+    let upload_time = Instant::now();
 
     sqlx::query!(
         "INSERT INTO upload (id, uploader_id, upload_time, world_id, item_id, upload_type)
@@ -296,6 +307,11 @@ async fn upload(
         }
     });
 
+    let upload_time_elapsed = upload_time.elapsed();
+
+    increment_counter!("xivhub_update", "type" => "listings");
+    histogram!("xivhub_update_time", upload_time_elapsed, "type" => "listings");
+
     Ok(())
 }
 
@@ -309,6 +325,8 @@ async fn upload_history(
         "Received purchase history upload for item {}",
         payload.item_id
     );
+
+    let upload_time = Instant::now();
 
     sqlx::query!(
         "INSERT INTO upload (id, uploader_id, upload_time, world_id, item_id, upload_type)
@@ -374,6 +392,11 @@ async fn upload_history(
             error!("Error fetching item info: {:?}", e);
         }
     });
+
+    let upload_time_elapsed = upload_time.elapsed();
+
+    increment_counter!("xivhub_update", "type" => "history");
+    histogram!("xivhub_update_time", upload_time_elapsed, "type" => "history");
 
     Ok(())
 }
@@ -471,6 +494,8 @@ async fn get_item_listings(
     State(state): State<AppState>,
     Path(item_id): Path<i32>,
 ) -> Result<Json<ListingsResponse>, AppError> {
+    let listings_time = Instant::now();
+
     let listings = sqlx::query_as!(
         Listing,
         "SELECT * FROM listing WHERE item_id = $1 ORDER BY world_id ASC, price_per_unit ASC",
@@ -478,6 +503,9 @@ async fn get_item_listings(
     )
     .fetch_all(&state.pool)
     .await?;
+
+    let listings_time = listings_time.elapsed();
+    histogram!("xivhub_get_item_listings_time", listings_time);
 
     let item = fetch_item_info(item_id, &state.pool).await?;
 
