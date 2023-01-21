@@ -29,6 +29,9 @@ GET /item/:id/purchases
 - Query
 page - Starting from 0, entries per page: 250
 
+GET /item/:id/uploads
+# Get item upload dates
+
 GET /stats
 # General stats
 
