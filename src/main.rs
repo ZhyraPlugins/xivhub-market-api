@@ -610,7 +610,7 @@ async fn list_items(
         if let Some(search) = &query.search {
             sqlx::query!(
                 "SELECT COUNT(*) from item_info WHERE LOWER(name) LIKE LOWER($1)",
-                search
+                format!("%{search}%")
             )
             .fetch_one(&state.pool)
             .await?
