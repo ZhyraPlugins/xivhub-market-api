@@ -389,7 +389,7 @@ async fn upload_history(
 
     tokio::spawn(async move {
         if let Err(e) = fetch_item_info(payload.item_id, &state.pool).await {
-            error!("Error fetching item info: {:?}", e);
+            error!("Error fetching item info for item {}: {:?}", payload.item_id, e);
         }
     });
 
