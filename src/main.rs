@@ -1,3 +1,9 @@
+#![forbid(unsafe_code)]
+#![deny(warnings)]
+#![deny(clippy::missing_const_for_fn)]
+#![deny(clippy::nursery)]
+#![deny(clippy::pedantic)]
+
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -124,7 +130,7 @@ async fn main() -> color_eyre::Result<()> {
 
     // build our application with a route
     let app = Router::new()
-        .route("/", get(home))
+        .route("/", get(|| async { include_str!("../README.md") }))
         .route("/last_uploads", get(last_uploads))
         .route("/stats", get(stats))
         .route("/history", post(upload_history))
@@ -233,10 +239,6 @@ async fn fetch_item_info(item_id: i32, db: &PgPool) -> Result<ItemInfo, AppError
     }
 }
 
-async fn home() -> &'static str {
-    include_str!("../README.md")
-}
-
 async fn upload(
     State(state): State<AppState>,
     Json(payload): Json<UploadRequest<UploadRequestListing>>,
@@ -273,7 +275,7 @@ async fn upload(
         let date = chrono::Utc
             .timestamp_opt(listing.last_review_time, 0)
             .unwrap();
-        let materia_count = listing.materia.len() as i32;
+        let materia_count: i32 = listing.materia.len().try_into()?;
         sqlx::query!(
             "INSERT INTO listing (
                 upload_id, world_id, item_id, seller_id,
@@ -545,8 +547,8 @@ async fn get_item_purchases(
 
     Ok(Json(PurchasesResponse {
         item,
-        purchases,
         page,
+        purchases,
     }))
 }
 
