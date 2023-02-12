@@ -93,7 +93,11 @@ async fn main() -> color_eyre::Result<()> {
     let (prometheus_layer, metrics_handle) = PrometheusMetricLayer::pair();
 
     let pool = PgPoolOptions::new()
-        .max_connections(30)
+        .max_connections(
+            std::env::var("DATABASE_MAX_CONNECTIONS")
+                .map(|x| x.parse().expect("valid number"))
+                .unwrap_or(30),
+        )
         .connect(&std::env::var("DATABASE_URL")?)
         .await?;
 
@@ -391,7 +395,10 @@ async fn upload_history(
 
     tokio::spawn(async move {
         if let Err(e) = fetch_item_info(payload.item_id, &state.pool).await {
-            error!("Error fetching item info for item {}: {:?}", payload.item_id, e);
+            error!(
+                "Error fetching item info for item {}: {:?}",
+                payload.item_id, e
+            );
         }
     });
 
