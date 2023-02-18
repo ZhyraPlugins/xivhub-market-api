@@ -139,6 +139,8 @@ pub async fn history(
 
     let upload_time = Instant::now();
 
+    let mut trans = state.pool.begin().await?;
+
     sqlx::query!(
         "INSERT INTO upload (id, uploader_id, upload_time, world_id, item_id, upload_type)
         VALUES ($1,$2,$3,$4,$5,$6)",
@@ -149,7 +151,7 @@ pub async fn history(
         payload.item_id,
         1
     )
-    .execute(&state.pool)
+    .execute(&mut trans)
     .await?;
 
     // If iter is not emtpy returns some.
@@ -159,8 +161,6 @@ pub async fn history(
             .single()
             .ok_or_else(|| AppError(eyre!("invalid oldest purchase date")))?;
 
-        let trans = state.pool.begin().await?;
-
         // delete records more recent than the last purchase time
         sqlx::query!(
             "DELETE FROM purchase WHERE item_id = $1 AND world_id = $2 AND purchase_time >= $3",
@@ -168,7 +168,7 @@ pub async fn history(
             payload.world_id,
             oldest_date
         )
-        .execute(&state.pool)
+        .execute(&mut trans)
         .await?;
 
         for listing in payload.listings {
@@ -192,12 +192,12 @@ pub async fn history(
                 listing.quantity,
                 listing.price_per_unit
             )
-            .execute(&state.pool)
+            .execute(&mut trans)
             .await?;
         }
-
-        trans.commit().await?;
     }
+
+    trans.commit().await?;
 
     let upload_time_elapsed = upload_time.elapsed();
 

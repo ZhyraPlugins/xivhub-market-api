@@ -36,50 +36,57 @@ fn main() -> color_eyre::Result<()> {
     let item_search_category_sheet = excel.sheet(for_type::<sheet::ItemSearchCategory>())?;
     let item_ui_category_sheet = excel.sheet(for_type::<sheet::ItemUICategory>())?;
 
-    let mut id = 0;
     // I expect there to be about 15k items (after filtering)
     let mut items: Vec<ItemInfo> = Vec::with_capacity(15000);
 
     let now = Instant::now();
 
-    while let Ok(item) = items_sheet.row(id) {
-        let name = item.name.to_string();
-        if !item.is_untradable && !name.is_empty() {
-            //info!(id, name, "parsing");
-            let search_category =
-                item_search_category_sheet.row(item.item_search_category.into())?;
-            let ui_category = item_ui_category_sheet.row(item.item_ui_category.into())?;
+    for id in 0.. {
+        if let Ok(item) = items_sheet.row(id) {
+            let name = item.name.to_string();
+            if !item.is_untradable && !name.is_empty() {
+                let search_category =
+                    item_search_category_sheet.row(item.item_search_category.into())?;
+                let ui_category = item_ui_category_sheet.row(item.item_ui_category.into())?;
 
-            items.push(ItemInfo {
-                item_id: id.try_into().unwrap(),
-                name,
-                icon: icon_id_to_url(item.icon, false),
-                icon_hd: icon_id_to_url(item.icon, true),
-                description: item.description.to_string(),
-                item_kind_name: order_major_to_str(ui_category.order_major.into()).to_string(),
-                item_kind_id: item.item_ui_category.into(),
-                item_search_category: item.item_search_category.into(),
-                item_search_category_iconhd: icon_id_to_url(
-                    search_category.icon.try_into().unwrap(),
-                    true,
-                ),
-                item_search_category_name: search_category.name.to_string(),
-                stack_size: item.stack_size.try_into().unwrap(),
-                level_item: item.level_item.try_into().unwrap(),
-                level_equip: item.level_equip.into(),
-                materia_slot_count: item.materia_slot_count.into(),
-                rarity: item.rarity.into(),
-                can_be_hq: item.can_be_hq,
-            });
+                let search_name = search_category.name.to_string();
+
+                if search_name.trim().is_empty() {
+                    continue;
+                }
+
+                items.push(ItemInfo {
+                    item_id: id.try_into().unwrap(),
+                    name,
+                    icon: icon_id_to_url(item.icon, false),
+                    icon_hd: icon_id_to_url(item.icon, true),
+                    description: item.description.to_string(),
+                    item_kind_name: order_major_to_str(ui_category.order_major.into()).to_string(),
+                    item_kind_id: item.item_ui_category.into(),
+                    item_search_category: item.item_search_category.into(),
+                    item_search_category_iconhd: icon_id_to_url(
+                        search_category.icon.try_into().unwrap(),
+                        true,
+                    ),
+                    item_search_category_name: search_category.name.to_string(),
+                    stack_size: item.stack_size.try_into().unwrap(),
+                    level_item: item.level_item.try_into().unwrap(),
+                    level_equip: item.level_equip.into(),
+                    materia_slot_count: item.materia_slot_count.into(),
+                    rarity: item.rarity.into(),
+                    can_be_hq: item.can_be_hq,
+                });
+            }
+        } else {
+            break;
         }
-
-        id += 1;
     }
 
     let elapsed = now.elapsed();
     info!("Got {} items in {elapsed:?}", items.len());
 
-    let output = std::path::Path::new("items.bin.zstd");
+    std::fs::create_dir("assets").ok();
+    let output = std::path::Path::new("assets/items.bin.zstd");
     let file = std::fs::File::create(output)?;
     let mut enc = zstd::stream::Encoder::new(file, 10)?;
 
@@ -87,7 +94,7 @@ fn main() -> color_eyre::Result<()> {
     enc.flush()?;
     enc.finish()?;
 
-    info!("Saved to items.bin.zstd");
+    info!("Saved to {output:?}");
 
     Ok(())
 }

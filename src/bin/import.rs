@@ -1,3 +1,13 @@
+#![forbid(unsafe_code)]
+#![deny(warnings)]
+#![deny(clippy::missing_const_for_fn)]
+#![deny(clippy::nursery)]
+#![deny(clippy::pedantic)]
+#![allow(clippy::missing_errors_doc)]
+#![allow(clippy::module_name_repetitions)]
+#![allow(clippy::missing_panics_doc)]
+#![allow(clippy::cognitive_complexity)]
+
 use std::time::Instant;
 
 use sqlx::postgres::PgPoolOptions;
@@ -19,28 +29,29 @@ async fn run() -> color_eyre::Result<()> {
     // initialize tracing
     tracing_subscriber::fmt::init();
 
-    std::fs::create_dir("assets").ok();
     let input = std::path::Path::new("assets/items.bin.zstd");
     let file = std::fs::File::open(input)?;
     let mut decoder = zstd::stream::Decoder::new(file)?;
 
     let items: Vec<ItemInfo> = bincode::deserialize_from(&mut decoder)?;
 
-    info!("Loaded {} items from items.bin.zstd", items.len());
+    info!("Loaded {} items from {input:?}", items.len());
 
     let pool = PgPoolOptions::new()
         .max_connections(
             std::env::var("DATABASE_MAX_CONNECTIONS")
                 .map(|x| x.parse().expect("valid number"))
-                .unwrap_or(30),
+                .unwrap_or(5),
         )
         .connect(&std::env::var("DATABASE_URL")?)
         .await?;
 
     let start = Instant::now();
-    let tx = pool.begin().await?;
+    let mut tx = pool.begin().await?;
 
-    sqlx::query!("DELETE FROM item_info").execute(&pool).await?;
+    sqlx::query!("DELETE FROM item_info")
+        .execute(&mut tx)
+        .await?;
 
     for item in items {
         sqlx::query!(
@@ -68,7 +79,7 @@ async fn run() -> color_eyre::Result<()> {
             item.rarity,
             item.can_be_hq
         )
-        .execute(&pool).await?;
+        .execute(&mut tx).await?;
     }
 
     tx.commit().await?;
