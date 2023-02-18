@@ -57,4 +57,10 @@ pub struct ItemInfo {
     pub item_search_category: i32,
     pub item_search_category_iconhd: String,
     pub item_search_category_name: String,
+    pub stack_size: i32,
+    pub level_item: i32,
+    pub level_equip: i32,
+    pub materia_slot_count: i32,
+    pub rarity: i32,
+    pub can_be_hq: bool,
 }

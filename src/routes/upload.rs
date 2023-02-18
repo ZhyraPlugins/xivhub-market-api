@@ -5,10 +5,10 @@ use color_eyre::eyre::eyre;
 use metrics::{histogram, increment_counter};
 use serde::Deserialize;
 use std::time::Instant;
-use tracing::{error, info};
+use tracing::info;
 use uuid::Uuid;
 
-use crate::{error::AppError, fetch_item_info, AppState};
+use crate::{error::AppError, AppState};
 
 #[derive(Debug, Deserialize)]
 pub struct Request<T> {
@@ -118,12 +118,6 @@ pub async fn listings(
         .await?;
     }
 
-    tokio::spawn(async move {
-        if let Err(e) = fetch_item_info(payload.item_id, &state.pool).await {
-            error!("Error fetching item info: {:?}", e);
-        }
-    });
-
     let upload_time_elapsed = upload_time.elapsed();
 
     increment_counter!("xivhub_update", "type" => "listings");
@@ -204,15 +198,6 @@ pub async fn history(
 
         trans.commit().await?;
     }
-
-    tokio::spawn(async move {
-        if let Err(e) = fetch_item_info(payload.item_id, &state.pool).await {
-            error!(
-                "Error fetching item info for item {}: {:?}",
-                payload.item_id, e
-            );
-        }
-    });
 
     let upload_time_elapsed = upload_time.elapsed();
 

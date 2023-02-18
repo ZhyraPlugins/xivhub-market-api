@@ -1,3 +1,5 @@
+//! The api server.
+
 #![forbid(unsafe_code)]
 #![deny(warnings)]
 #![deny(clippy::missing_const_for_fn)]
@@ -12,12 +14,9 @@ use axum::{
     Router,
 };
 use axum_prometheus::PrometheusMetricLayer;
-use entities::ItemInfo;
-use error::AppError;
 use headers::HeaderValue;
 use reqwest::{header, Method};
-use serde::Deserialize;
-use sqlx::{postgres::PgPoolOptions, PgPool};
+use sqlx::postgres::PgPoolOptions;
 use std::{net::SocketAddr, time::Duration};
 use tower_http::{
     cors::{Any, CorsLayer},
@@ -25,19 +24,15 @@ use tower_http::{
     timeout::TimeoutLayer,
     trace::TraceLayer,
 };
-use tracing::info;
-
-pub mod entities;
-pub mod error;
-pub mod routes;
-
-#[derive(Debug, Clone)]
-pub struct AppState {
-    pool: PgPool,
-}
+use xivhub_market::{routes, AppState};
 
 #[tokio::main]
 async fn main() -> color_eyre::Result<()> {
+    // Better error reporting whe compiling if we are not inside a macro.
+    run().await
+}
+
+async fn run() -> color_eyre::Result<()> {
     dotenvy::dotenv().ok();
 
     // initialize tracing
@@ -55,35 +50,6 @@ async fn main() -> color_eyre::Result<()> {
         .await?;
 
     let state = AppState { pool: pool.clone() };
-
-    tokio::spawn(async move {
-        info!("Started item info fetcher");
-
-        let current_item_ids = sqlx::query!("SELECT DISTINCT item_id from upload")
-            .fetch_all(&pool)
-            .await
-            .unwrap();
-
-        let total = current_item_ids.len();
-
-        for (i, record) in current_item_ids.into_iter().enumerate() {
-            let item_info = sqlx::query_as!(
-                ItemInfo,
-                "SELECT * from item_info WHERE item_id = $1",
-                record.item_id
-            )
-            .fetch_optional(&pool)
-            .await
-            .unwrap();
-
-            info!("Fetching item infos. ({}/{})", i + 1, total);
-            if item_info.is_none() {
-                info!("Item info with id {} not in db, fetching.", record.item_id);
-                fetch_item_info(record.item_id, &pool).await.unwrap();
-                tokio::time::sleep(Duration::from_millis(50)).await;
-            }
-        }
-    });
 
     // build our application with a route
     let app = Router::new()
@@ -128,79 +94,4 @@ async fn main() -> color_eyre::Result<()> {
         .await?;
 
     Ok(())
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-struct XivApiItemInfo {
-    pub name: String,
-    pub icon: String,
-    #[serde(rename = "IconHD")]
-    pub icon_hd: String,
-    pub description: String,
-    pub item_kind: ItemKind,
-    pub item_search_category: SearchCategory,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-struct ItemKind {
-    #[serde(rename = "ID")]
-    pub id: i32,
-    pub name: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-struct SearchCategory {
-    pub category: i32,
-    #[serde(rename = "IconHD")]
-    pub icon_hd: String,
-    pub name: String,
-}
-
-/// Fetches the info into db if it doesnt exist yet.
-async fn fetch_item_info(item_id: i32, db: &PgPool) -> Result<ItemInfo, AppError> {
-    let res = sqlx::query_as!(
-        ItemInfo,
-        "SELECT * FROM item_info WHERE item_id = $1",
-        item_id
-    )
-    .fetch_optional(db)
-    .await?;
-
-    if let Some(res) = res {
-        Ok(res)
-    } else {
-        let private_key = std::env::var("XIVAPI_PRIVATE_KEY")?;
-        let data = reqwest::get(format!("https://xivapi.com/item/{item_id}?private_key={private_key}&columns=Name,Icon,IconHD,Description,ItemKind.Name,ItemKind.ID,ItemSearchCategory.Category,ItemSearchCategory.IconHD,ItemSearchCategory.Name")).await?;
-        let res: XivApiItemInfo = data.json().await?;
-        info!("Fetched info for item {item_id}");
-
-        sqlx::query!("INSERT INTO item_info (item_id, name, icon, icon_hd, description, item_kind_name, item_kind_id,
-                        item_search_category, item_search_category_iconhd, item_search_category_name)
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)", 
-                        item_id,
-                    res.name,
-                    res.icon,
-                    res.icon_hd,
-                    res.description,
-                    res.item_kind.name,
-                    res.item_kind.id,
-                    res.item_search_category.category,
-                    res.item_search_category.icon_hd,
-                    res.item_search_category.name,
-                )
-                        .execute(db).await.ok();
-
-        let res = sqlx::query_as!(
-            ItemInfo,
-            "SELECT * FROM item_info WHERE item_id = $1",
-            item_id
-        )
-        .fetch_one(db)
-        .await?;
-
-        Ok(res)
-    }
 }
