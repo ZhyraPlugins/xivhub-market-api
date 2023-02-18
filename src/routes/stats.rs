@@ -35,11 +35,11 @@ pub async fn stats(State(state): State<AppState>) -> Result<Json<Stats>, AppErro
         .fetch_one(&state.pool)
         .await?;
 
-    let unique_uploaders = sqlx::query!("SELECT COUNT(DISTINCT uploader_id) from upload")
+    let unique_uploaders = sqlx::query!("SELECT count FROM uploader_count")
         .fetch_one(&state.pool)
         .await?;
 
-    let unique_items = sqlx::query!("SELECT COUNT(DISTINCT item_id) from listing")
+    let unique_items = sqlx::query!("SELECT count from unique_items_count")
         .fetch_one(&state.pool)
         .await?;
 

@@ -14,12 +14,14 @@ use axum::{
 use axum_prometheus::PrometheusMetricLayer;
 use entities::ItemInfo;
 use error::AppError;
-use reqwest::Method;
+use headers::HeaderValue;
+use reqwest::{header, Method};
 use serde::Deserialize;
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::{net::SocketAddr, time::Duration};
 use tower_http::{
     cors::{Any, CorsLayer},
+    set_header::SetResponseHeaderLayer,
     timeout::TimeoutLayer,
     trace::TraceLayer,
 };
@@ -89,7 +91,13 @@ async fn main() -> color_eyre::Result<()> {
         .route("/last_uploads", get(routes::upload::last_uploads))
         .route("/history", post(routes::upload::history))
         .route("/upload", post(routes::upload::listings))
-        .route("/stats", get(routes::stats::stats))
+        .route(
+            "/stats",
+            get(routes::stats::stats).layer(SetResponseHeaderLayer::if_not_present(
+                header::CACHE_CONTROL,
+                HeaderValue::from_static("max-age=300, must-revalidate"),
+            )),
+        )
         .route("/item", get(routes::item::list))
         .route("/item/:id", get(routes::item::listings))
         .route("/item/:id/purchases", get(routes::item::purchases))
