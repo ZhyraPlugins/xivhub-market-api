@@ -210,7 +210,7 @@ pub async fn history(
 pub async fn last_uploads(State(state): State<AppState>) -> Result<Json<Vec<Upload>>, AppError> {
     let mut uploads = sqlx::query_as!(
         Upload,
-        "SELECT u.*, f.name, f.icon FROM upload u LEFT JOIN item_info f ON f.item_id = u.item_id ORDER BY upload_time DESC LIMIT 250"
+        "SELECT u.*, f.name, f.icon FROM upload u LEFT JOIN item_info f ON f.item_id = u.item_id WHERE upload_type = 0 ORDER BY upload_time DESC LIMIT 250"
     )
     .fetch_all(&state.pool)
     .await?;
