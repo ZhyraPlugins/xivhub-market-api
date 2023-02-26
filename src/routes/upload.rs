@@ -76,13 +76,14 @@ pub async fn listings(
     .await?;
 
     // for now, dont keep a history of previous listings.
-    sqlx::query!(
+    let mut rows_affected = sqlx::query!(
         "DELETE FROM listing WHERE item_id = $1 AND world_id =$2",
         payload.item_id,
         payload.world_id
     )
     .execute(&state.pool)
-    .await?;
+    .await?
+    .rows_affected();
 
     for listing in payload.listings {
         let date = chrono::Utc
@@ -91,7 +92,7 @@ pub async fn listings(
             .ok_or_else(|| AppError(eyre!("invalid last_review_time date")))?;
 
         let materia_count: i32 = listing.materia.len().try_into()?;
-        sqlx::query!(
+        rows_affected += sqlx::query!(
             "INSERT INTO listing (
                 upload_id, world_id, item_id, seller_id,
                 retainer_id, retainer_name, creator_id, creator_name,
@@ -115,13 +116,18 @@ pub async fn listings(
             listing.hq,
         )
         .execute(&state.pool)
-        .await?;
+        .await?
+        .rows_affected();
     }
 
     let upload_time_elapsed = upload_time.elapsed();
 
     increment_counter!("xivhub_update", "type" => "listings");
     histogram!("xivhub_update_time", upload_time_elapsed, "type" => "listings");
+
+    if rows_affected > 0 {
+        state.item_listings_cache.invalidate(&payload.item_id).await;
+    }
 
     Ok(())
 }
@@ -154,6 +160,8 @@ pub async fn history(
     .execute(&mut trans)
     .await?;
 
+    let mut rows_affected = 0;
+
     // If iter is not emtpy returns some.
     if let Some(oldest_purchase) = payload.listings.iter().map(|x| x.purchase_time).min() {
         let oldest_date = chrono::Utc
@@ -162,14 +170,15 @@ pub async fn history(
             .ok_or_else(|| AppError(eyre!("invalid oldest purchase date")))?;
 
         // delete records more recent than the last purchase time
-        sqlx::query!(
+        rows_affected = sqlx::query!(
             "DELETE FROM purchase WHERE item_id = $1 AND world_id = $2 AND purchase_time >= $3",
             payload.item_id,
             payload.world_id,
             oldest_date
         )
         .execute(&mut trans)
-        .await?;
+        .await?
+        .rows_affected();
 
         for listing in payload.listings {
             let date = chrono::Utc
@@ -177,7 +186,7 @@ pub async fn history(
                 .single()
                 .ok_or_else(|| AppError(eyre!("invalid purchase_time")))?;
 
-            sqlx::query!(
+            rows_affected = sqlx::query!(
                 "INSERT INTO purchase (
                     upload_id, item_id, world_id, buyer_name, hq, on_mannequin, purchase_time, quantity, price_per_unit)
                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
@@ -193,7 +202,7 @@ pub async fn history(
                 listing.price_per_unit
             )
             .execute(&mut trans)
-            .await?;
+            .await?.rows_affected();
         }
     }
 
@@ -204,6 +213,9 @@ pub async fn history(
     increment_counter!("xivhub_update", "type" => "history");
     histogram!("xivhub_update_time", upload_time_elapsed, "type" => "history");
 
+    if rows_affected > 0 {
+        state.item_purchase_cache.invalidate(&payload.item_id).await;
+    }
     Ok(())
 }
 

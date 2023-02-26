@@ -2,19 +2,20 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct Upload {
     pub id: Uuid,
-    pub uploader_id: String,
+    pub uploader_id: String, // sha256
     pub upload_time: DateTime<Utc>,
     pub world_id: i32,
     pub item_id: i32,
     pub upload_type: i32,
+    /// The item name.
     pub name: String,
+    /// The item icon.
     pub icon: String,
 }
-
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct Listing {
     pub upload_id: Uuid,
     pub world_id: i32,
@@ -32,7 +33,7 @@ pub struct Listing {
     pub materia_count: i32,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct Purchase {
     pub item_id: i32,
     pub world_id: i32,
@@ -45,7 +46,7 @@ pub struct Purchase {
     pub price_per_unit: i32,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ItemInfo {
     pub item_id: i32,
     pub name: String,

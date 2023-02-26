@@ -9,14 +9,14 @@ use axum::{
     Json,
 };
 use chrono::{DateTime, Utc};
-use metrics::histogram;
+use metrics::{histogram, increment_counter};
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct ListingsResponse {
-    item: ItemInfo,
-    listings: Vec<Listing>,
+    pub item: ItemInfo,
+    pub listings: Vec<Listing>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -26,32 +26,42 @@ pub async fn listings(
     State(state): State<AppState>,
     Path(item_id): Path<i32>,
 ) -> Result<Json<ListingsResponse>, AppError> {
+    increment_counter!("xivhub_listings_request");
+
     let listings_time = Instant::now();
 
-    let listings = sqlx::query_as!(
-        Listing,
-        "SELECT * FROM listing WHERE item_id = $1 ORDER BY world_id ASC, price_per_unit ASC",
-        item_id
-    )
-    .fetch_all(&state.pool)
-    .await?;
+    let listings = state
+        .item_listings_cache
+        .try_get_with(item_id, async {
+            increment_counter!("xivhub_listings_request_cache_miss");
+            let listings = sqlx::query_as!(
+            Listing,
+            "SELECT * FROM listing WHERE item_id = $1 ORDER BY world_id ASC, price_per_unit ASC",
+            item_id
+        )
+            .fetch_all(&state.pool)
+            .await?;
+
+            let item = fetch_item_info(item_id, &state.pool).await?;
+
+            Ok::<_, sqlx::Error>(ListingsResponse { item, listings })
+        })
+        .await?;
 
     let listings_time = listings_time.elapsed();
     histogram!("xivhub_get_item_listings_time", listings_time);
 
-    let item = fetch_item_info(item_id, &state.pool).await?;
-
-    Ok(Json(ListingsResponse { item, listings }))
+    Ok(Json(listings))
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct PurchasesResponse {
-    item: ItemInfo,
-    page: i64,
-    purchases: Vec<Purchase>,
+    pub item: ItemInfo,
+    pub page: i64,
+    pub purchases: Vec<Purchase>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone, Copy)]
 pub struct PurchasesQuery {
     pub page: Option<i64>,
 }
@@ -62,24 +72,48 @@ pub async fn purchases(
     Query(query): Query<PurchasesQuery>,
 ) -> Result<Json<PurchasesResponse>, AppError> {
     let page = query.page.unwrap_or(0);
+    increment_counter!("xivhub_purchases_request", "page" => page.to_string());
 
-    let purchases = sqlx::query_as!(
-        Purchase,
-        "SELECT * FROM purchase WHERE item_id = $1 ORDER BY purchase_time DESC OFFSET $2 LIMIT $3",
-        item_id,
-        page * 250,
-        250
-    )
-    .fetch_all(&state.pool)
-    .await?;
+    // only cache page 0.
+    let purchases = if page == 0 {
+        state.item_purchase_cache.try_get_with(item_id, async {
+            increment_counter!("xivhub_purchases_request_cache_miss", "page" => page.to_string());
+            let purchases = sqlx::query_as!(
+                    Purchase,
+                    "SELECT * FROM purchase WHERE item_id = $1 ORDER BY purchase_time DESC OFFSET $2 LIMIT $3",
+                    item_id,
+                    page * 250,
+                    250
+            )
+            .fetch_all(&state.pool)
+            .await?;
+            let item = fetch_item_info(item_id, &state.pool).await?;
+            Ok::<_, sqlx::Error>(PurchasesResponse {
+                item,
+                page,
+                purchases,
+            })
+        }).await?
+    } else {
+        increment_counter!("xivhub_purchases_request_cache_miss", "page" => page.to_string());
+        let purchases = sqlx::query_as!(
+            Purchase,
+            "SELECT * FROM purchase WHERE item_id = $1 ORDER BY purchase_time DESC OFFSET $2 LIMIT $3",
+            item_id,
+            page * 250,
+            250
+        )
+        .fetch_all(&state.pool)
+        .await?;
+        let item = fetch_item_info(item_id, &state.pool).await?;
+        PurchasesResponse {
+            item,
+            page,
+            purchases,
+        }
+    };
 
-    let item = fetch_item_info(item_id, &state.pool).await?;
-
-    Ok(Json(PurchasesResponse {
-        item,
-        page,
-        purchases,
-    }))
+    Ok(Json(purchases))
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -95,7 +129,7 @@ pub async fn get_item_upload_dates(
 ) -> Result<Json<Vec<ItemUploadDates>>, AppError> {
     let uploads = sqlx::query_as!(
         ItemUploadDates,
-        " SELECT world_id, MAX(upload_time) as upload_time FROM upload WHERE item_id = $1 GROUP BY world_id, item_id",
+        "SELECT world_id, MAX(upload_time) as upload_time FROM upload WHERE item_id = $1 GROUP BY world_id, item_id",
         item_id
     )
     .fetch_all(&state.pool)
@@ -133,9 +167,9 @@ pub struct ItemList {
 
 #[derive(Debug, Serialize)]
 pub struct ListItemsResponse {
-    items: Vec<ItemList>,
-    page: i64,
-    total_pages: i64,
+    pub items: Vec<ItemList>,
+    pub page: i64,
+    pub total_pages: i64,
 }
 
 pub async fn list(

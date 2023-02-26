@@ -15,6 +15,7 @@ use axum::{
 };
 use axum_prometheus::PrometheusMetricLayer;
 use headers::HeaderValue;
+use moka::future::Cache;
 use reqwest::{header, Method};
 use sqlx::postgres::PgPoolOptions;
 use std::{net::SocketAddr, time::Duration};
@@ -24,7 +25,13 @@ use tower_http::{
     timeout::TimeoutLayer,
     trace::TraceLayer,
 };
-use xivhub_market::{routes, AppState};
+use xivhub_market::{
+    routes::{
+        self,
+        item::{ListItemsResponse, ListingsResponse, PurchasesResponse},
+    },
+    AppState,
+};
 
 #[tokio::main]
 async fn main() -> color_eyre::Result<()> {
@@ -49,7 +56,28 @@ async fn run() -> color_eyre::Result<()> {
         .connect(&std::env::var("DATABASE_URL")?)
         .await?;
 
-    let state = AppState { pool: pool.clone() };
+    let items_cache_capacity = std::env::var("XIVHUB_ITEMS_CACHE_SIZE")
+        .map(|x| x.parse().expect("valid number"))
+        .unwrap_or(5000);
+
+    let state = AppState {
+        pool: pool.clone(),
+        item_listings_cache: Cache::builder()
+            .name("item_listings_cache")
+            .time_to_idle(Duration::from_secs(60 * 60 * 6)) // 6 hours, updates invalidate the entry
+            .max_capacity(items_cache_capacity)
+            .build(),
+        item_purchase_cache: Cache::builder()
+            .name("item_purchase_cache")
+            .time_to_idle(Duration::from_secs(60 * 60 * 6)) // 6 hours, updates invalidate the entry
+            .max_capacity(items_cache_capacity)
+            .build(),
+        stats_cache: Cache::builder()
+            .name("stats_cache")
+            .time_to_live(Duration::from_secs(60 * 5)) // 5 minutes
+            .max_capacity(1)
+            .build(),
+    };
 
     // build our application with a route
     let app = Router::new()
@@ -60,6 +88,13 @@ async fn run() -> color_eyre::Result<()> {
         .route(
             "/stats",
             get(routes::stats::stats).layer(SetResponseHeaderLayer::if_not_present(
+                header::CACHE_CONTROL,
+                HeaderValue::from_static("max-age=300, must-revalidate"),
+            )),
+        )
+        .route(
+            "/cache_stats",
+            get(routes::stats::cache_stats).layer(SetResponseHeaderLayer::if_not_present(
                 header::CACHE_CONTROL,
                 HeaderValue::from_static("max-age=300, must-revalidate"),
             )),
