@@ -11,7 +11,7 @@ lto = true
 codegen-units = 1
 
 [dependencies]
-axum = { version = "0.6.7", features = ["headers"] }
+axum = { version = "0.6.8", features = ["headers"] }
 sqlx = { version = "0.6.2", default-features = false, features = ["runtime-tokio-rustls", "postgres", "macros", "chrono", "offline", "migrate", "uuid"] }
 moka = { version = "0.10.0", features = ["future"] }
 color-eyre = "0.6.2"
@@ -26,7 +26,7 @@ dotenvy = "0.15.6"
 chrono = { version = "0.4.23", features = ["serde"] }
 reqwest = { version = "0.11.14", features = ["json"] }
 uuid = { version = "1.3.0", features = ["serde"] }
-tower-http = { version = "0.3.5", features = ["full"] }
+tower-http = { version = "0.4.0", features = ["full"] }
 sha256 = "1.1.2"
 axum-prometheus = "0.3.1"
 metrics-exporter-prometheus = "0.11.0"
