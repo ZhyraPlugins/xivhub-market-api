@@ -11,14 +11,14 @@ lto = true
 codegen-units = 1
 
 [dependencies]
-axum = { version = "0.6.8", features = ["headers"] }
+axum = { version = "0.6.10", features = ["headers"] }
 sqlx = { version = "0.6.2", default-features = false, features = ["runtime-tokio-rustls", "postgres", "macros", "chrono", "offline", "migrate", "uuid"] }
 moka = { version = "0.10.0", features = ["future"] }
 color-eyre = "0.6.2"
 headers = "0.3.8"
 serde = { version = "1.0.152", features = ["derive"] }
-serde_json = "1.0.93"
-tokio = { version = "1.25.0", features = ["full"] }
+serde_json = "1.0.94"
+tokio = { version = "1.26.0", features = ["full"] }
 validator = { version = "0.16.0", features = ["derive"] }
 tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
