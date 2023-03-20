@@ -1,7 +1,14 @@
+use std::sync::Arc;
+
 use crate::error::AppError;
 use axum::{extract::State, Json};
 use chrono::{DateTime, Utc};
+use color_eyre::eyre::eyre;
 use serde::Serialize;
+use tokio::{
+    task::{JoinError, JoinHandle},
+    try_join,
+};
 
 use crate::AppState;
 
@@ -22,52 +29,87 @@ pub struct DayCount {
     pub day: Option<DateTime<Utc>>,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum FlattenError {
+    #[error("db error: {0}")]
+    Db(#[from] Arc<sqlx::Error>),
+    #[error("join error: {0}")]
+    JoinHandle(#[from] JoinError),
+}
+
+async fn flatten<T: Send>(handle: JoinHandle<Result<T, sqlx::Error>>) -> Result<T, AppError> {
+    match handle.await {
+        Ok(Ok(result)) => Ok(result),
+        Ok(Err(err)) => Err(AppError(eyre!("db error: {:?}", err))),
+        Err(err) => Err(AppError(eyre!("join error: {:?}", err))),
+    }
+}
+
 pub async fn stats(State(state): State<AppState>) -> Result<Json<Stats>, AppError> {
     let stats_value = state.stats_cache.try_get_with((), async {
-        let uploads = sqlx::query!("SELECT COUNT(*) from upload")
-            .fetch_one(&state.pool)
-            .await?;
 
-        let active_listings = sqlx::query!("SELECT COUNT(*) from listing")
-            .fetch_one(&state.pool)
-            .await?;
+    let pool = state.pool.clone();
+    let uploads = tokio::spawn(async move {
+        sqlx::query!("SELECT COUNT(*) from upload")
+            .fetch_one(&pool).await
+    });
 
-        let purchases = sqlx::query!("SELECT COUNT(*) from purchase")
-            .fetch_one(&state.pool)
-            .await?;
+    let pool = state.pool.clone();
+    let active_listings = tokio::spawn(async move {
+        sqlx::query!("SELECT COUNT(*) from listing")
+          .fetch_one(&pool).await
+    });
 
-        let unique_uploaders = sqlx::query!("SELECT count FROM uploader_count")
-            .fetch_one(&state.pool)
-            .await?;
+    let pool = state.pool.clone();
+    let purchases = tokio::spawn(async move {
+        sqlx::query!("SELECT COUNT(*) from purchase")
+            .fetch_one(&pool).await
+    });
 
-        let unique_items = sqlx::query!("SELECT count from unique_items_count")
-            .fetch_one(&state.pool)
-            .await?;
+    let pool = state.pool.clone();
+    let unique_uploaders = tokio::spawn(async move {
+        sqlx::query!("SELECT count FROM uploader_count")
+            .fetch_one(&pool).await
+    });
 
-        let mut uploads_per_day = sqlx::query_as!(DayCount,
+    let pool = state.pool.clone();
+    let unique_items = tokio::spawn(async move {
+        sqlx::query!("SELECT count from unique_items_count")
+            .fetch_one(&pool).await
+    });
+
+    let pool = state.pool.clone();
+    let uploads_per_day = tokio::spawn(async move {
+        sqlx::query_as!(DayCount,
             "SELECT COUNT(*) as count, DATE_TRUNC('day', upload_time) as day from upload GROUP BY DATE_TRUNC('day', upload_time) ORDER BY day DESC LIMIT 15")
-            .fetch_all(&state.pool)
-            .await?;
+            .fetch_all(&pool).await
+    });
 
-        uploads_per_day.reverse();
-
-        let mut purchase_by_day = sqlx::query_as!(DayCount,
+    let pool = state.pool.clone();
+    let purchase_by_day = tokio::spawn(async move {
+        sqlx::query_as!(DayCount,
             "SELECT COUNT(*) as count, DATE_TRUNC('day', purchase_time) as day from purchase GROUP BY DATE_TRUNC('day', purchase_time) ORDER BY day DESC LIMIT 15")
-            .fetch_all(&state.pool)
-            .await?;
+            .fetch_all(&pool).await
+    });
 
-        purchase_by_day.reverse();
+    let (uploads, active_listings, purchases, unique_uploaders, unique_items, mut uploads_per_day, mut purchase_by_day) = try_join!(
+        flatten(uploads), flatten(active_listings), flatten(purchases),
+        flatten(unique_uploaders), flatten(unique_items), flatten(uploads_per_day), flatten(purchase_by_day)
+    )?;
 
-        Ok::<_, sqlx::Error>(Stats {
-            total_uploads: uploads.count.unwrap_or(0),
-            active_listings: active_listings.count.unwrap_or(0),
-            total_purchases: purchases.count.unwrap_or(0),
-            unique_uploaders: unique_uploaders.count.unwrap_or(0),
-            unique_items: unique_items.count.unwrap_or(0),
-            uploads_per_day,
-            purchase_by_day,
+    uploads_per_day.reverse();
+    purchase_by_day.reverse();
+
+    Ok::<_, AppError>(Stats {
+        total_uploads: uploads.count.unwrap_or(0),
+        active_listings: active_listings.count.unwrap_or(0),
+        total_purchases: purchases.count.unwrap_or(0),
+        unique_uploaders: unique_uploaders.count.unwrap_or(0),
+        unique_items: unique_items.count.unwrap_or(0),
+        uploads_per_day,
+        purchase_by_day,
         })
-    }).await?;
+    }).await.map_err(|e| eyre!("{:?}", e))?;
 
     Ok(Json(stats_value))
 }
