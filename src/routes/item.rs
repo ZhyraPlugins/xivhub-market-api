@@ -136,6 +136,7 @@ pub struct DayPurchasesResponse {
 pub struct RangePurchases {
     pub high: Option<i32>,
     pub low: Option<i32>,
+    pub average: Option<i32>,
     pub quantity: Option<i64>,
     pub time: Option<DateTime<Utc>>,
 }
@@ -152,6 +153,7 @@ pub async fn purchases_by_day(
             date_trunc('day', purchase_time) as time,
             MAX(price_per_unit) as high,
             MIN(price_per_unit) as low,
+            CAST(AVG(price_per_unit) AS INTEGER) as average,
             SUM(quantity) as quantity
             FROM purchase WHERE item_id = $1
             GROUP BY date_trunc('day', purchase_time)
