@@ -126,6 +126,51 @@ pub async fn purchases(
     Ok(Json(purchases))
 }
 
+#[derive(Debug, Serialize, Clone)]
+pub struct DayPurchasesResponse {
+    pub item: ItemInfo,
+    pub days: Vec<RangePurchases>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct RangePurchases {
+    pub high: Option<i32>,
+    pub low: Option<i32>,
+    pub quantity: Option<i64>,
+    pub time: Option<DateTime<Utc>>,
+}
+
+pub async fn purchases_by_day(
+    State(state): State<AppState>,
+    Path(item_id): Path<i32>,
+) -> Result<Json<DayPurchasesResponse>, AppError> {
+    let start = Instant::now();
+    let purchases = sqlx::query_as!(
+        RangePurchases,
+        "SELECT
+            date_trunc('day', purchase_time) as time,
+            MAX(price_per_unit) as high,
+            MIN(price_per_unit) as low,
+            SUM(quantity) as quantity
+            FROM purchase WHERE item_id = $1
+            GROUP BY date_trunc('day', purchase_time)
+            ORDER BY time DESC LIMIT 30",
+        item_id,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+    let elapsed = start.elapsed();
+    histogram!("xivhub_query", elapsed, "type" => "item_purchases_by_day");
+
+    let item = fetch_item_info(item_id, &state.pool).await?;
+    let purchases = DayPurchasesResponse {
+        item,
+        days: purchases,
+    };
+
+    Ok(Json(purchases))
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ItemUploadDates {
     pub world_id: i32,

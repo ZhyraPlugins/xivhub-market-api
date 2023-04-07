@@ -100,6 +100,10 @@ async fn run() -> color_eyre::Result<()> {
         .route("/item/:id", get(routes::item::listings))
         .route("/item/:id/purchases", get(routes::item::purchases))
         .route(
+            "/item/:id/purchases_by_day",
+            get(routes::item::purchases_by_day),
+        )
+        .route(
             "/item/:id/uploads",
             get(routes::item::get_item_upload_dates),
         )
