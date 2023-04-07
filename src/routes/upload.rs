@@ -143,8 +143,6 @@ pub async fn history(
         payload.item_id
     );
 
-    let upload_time = Instant::now();
-
     let mut trans = state.pool.begin().await?;
 
     sqlx::query!(
@@ -206,12 +204,14 @@ pub async fn history(
         }
     }
 
+    let upload_time = Instant::now();
+
     trans.commit().await?;
 
     let upload_time_elapsed = upload_time.elapsed();
 
     increment_counter!("xivhub_update", "type" => "history");
-    histogram!("xivhub_update_time", upload_time_elapsed, "type" => "history");
+    histogram!("xivhub_query", upload_time_elapsed, "type" => "history");
 
     if rows_affected > 0 {
         state.item_purchase_cache.invalidate(&payload.item_id).await;
@@ -220,18 +220,15 @@ pub async fn history(
 }
 
 pub async fn last_uploads(State(state): State<AppState>) -> Result<Json<Vec<Upload>>, AppError> {
-    let mut uploads = sqlx::query_as!(
+    let start = Instant::now();
+    let uploads = sqlx::query_as!(
         Upload,
         "SELECT u.*, f.name, f.icon FROM upload u LEFT JOIN item_info f ON f.item_id = u.item_id WHERE upload_type = 0 ORDER BY upload_time DESC LIMIT 250"
     )
     .fetch_all(&state.pool)
     .await?;
-
-    // hash uploader_ids for now until i know if they are sensitive.
-    for upload in &mut uploads {
-        let up = sha256::digest(upload.uploader_id.as_str());
-        upload.uploader_id = up;
-    }
+    let elapsed = start.elapsed();
+    histogram!("xivhub_query", elapsed, "type" => "last_uploads");
 
     Ok(Json(uploads))
 }

@@ -1,9 +1,10 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use crate::error::AppError;
 use axum::{extract::State, Json};
 use chrono::{DateTime, Utc};
 use color_eyre::eyre::eyre;
+use metrics::histogram;
 use serde::Serialize;
 use tokio::{
     task::{JoinError, JoinHandle},
@@ -50,46 +51,74 @@ pub async fn stats(State(state): State<AppState>) -> Result<Json<Stats>, AppErro
 
     let pool = state.pool.clone();
     let uploads = tokio::spawn(async move {
-        sqlx::query!("SELECT COUNT(*) from upload")
-            .fetch_one(&pool).await
+        let start = Instant::now();
+        let q = sqlx::query!("SELECT COUNT(*) from upload")
+            .fetch_one(&pool).await;
+        let elapsed = start.elapsed();
+        histogram!("xivhub_query", elapsed, "type" => "stats_upload_count");
+        q
     });
 
     let pool = state.pool.clone();
     let active_listings = tokio::spawn(async move {
-        sqlx::query!("SELECT COUNT(*) from listing")
-          .fetch_one(&pool).await
+        let start = Instant::now();
+        let q = sqlx::query!("SELECT COUNT(*) from listing")
+          .fetch_one(&pool).await;
+        let elapsed = start.elapsed();
+        histogram!("xivhub_query", elapsed, "type" => "stats_listing_count");
+        q
     });
 
     let pool = state.pool.clone();
     let purchases = tokio::spawn(async move {
-        sqlx::query!("SELECT COUNT(*) from purchase")
-            .fetch_one(&pool).await
+        let start = Instant::now();
+        let q = sqlx::query!("SELECT COUNT(*) from purchase")
+            .fetch_one(&pool).await;
+        let elapsed = start.elapsed();
+        histogram!("xivhub_query", elapsed, "type" => "stats_purchase_count");
+        q
     });
 
     let pool = state.pool.clone();
     let unique_uploaders = tokio::spawn(async move {
-        sqlx::query!("SELECT count FROM uploader_count")
-            .fetch_one(&pool).await
+        let start = Instant::now();
+        let q = sqlx::query!("SELECT count FROM uploader_count")
+            .fetch_one(&pool).await;
+        let elapsed = start.elapsed();
+        histogram!("xivhub_query", elapsed, "type" => "stats_uploader_count");
+        q
     });
 
     let pool = state.pool.clone();
     let unique_items = tokio::spawn(async move {
-        sqlx::query!("SELECT count from unique_items_count")
-            .fetch_one(&pool).await
+        let start = Instant::now();
+        let q = sqlx::query!("SELECT count from unique_items_count")
+            .fetch_one(&pool).await;
+        let elapsed = start.elapsed();
+        histogram!("xivhub_query", elapsed, "type" => "stats_unique_items_count");
+        q
     });
 
     let pool = state.pool.clone();
     let uploads_per_day = tokio::spawn(async move {
-        sqlx::query_as!(DayCount,
+        let start = Instant::now();
+        let q = sqlx::query_as!(DayCount,
             "SELECT COUNT(*) as count, DATE_TRUNC('day', upload_time) as day from upload GROUP BY DATE_TRUNC('day', upload_time) ORDER BY day DESC LIMIT 15")
-            .fetch_all(&pool).await
+            .fetch_all(&pool).await;
+        let elapsed = start.elapsed();
+        histogram!("xivhub_query", elapsed, "type" => "stats_uploads_per_day_count");
+        q
     });
 
     let pool = state.pool.clone();
     let purchase_by_day = tokio::spawn(async move {
-        sqlx::query_as!(DayCount,
+        let start = Instant::now();
+        let q = sqlx::query_as!(DayCount,
             "SELECT COUNT(*) as count, DATE_TRUNC('day', purchase_time) as day from purchase GROUP BY DATE_TRUNC('day', purchase_time) ORDER BY day DESC LIMIT 15")
-            .fetch_all(&pool).await
+            .fetch_all(&pool).await;
+        let elapsed = start.elapsed();
+        histogram!("xivhub_query", elapsed, "type" => "stats_purchases_by_day_count");
+        q
     });
 
     let (uploads, active_listings, purchases, unique_uploaders, unique_items, mut uploads_per_day, mut purchase_by_day) = try_join!(

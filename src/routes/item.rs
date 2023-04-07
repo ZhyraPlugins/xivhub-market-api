@@ -78,6 +78,8 @@ pub async fn purchases(
     let purchases = if page == 0 {
         state.item_purchase_cache.try_get_with(item_id, async {
             increment_counter!("xivhub_purchases_request_cache_miss", "page" => page.to_string());
+
+            let start = Instant::now();
             let purchases = sqlx::query_as!(
                     Purchase,
                     "SELECT * FROM purchase WHERE item_id = $1 ORDER BY purchase_time DESC OFFSET $2 LIMIT $3",
@@ -87,6 +89,9 @@ pub async fn purchases(
             )
             .fetch_all(&state.pool)
             .await?;
+            let elapsed = start.elapsed();
+            histogram!("xivhub_query", elapsed, "type" => "purchases");
+
             let item = fetch_item_info(item_id, &state.pool).await?;
             Ok::<_, sqlx::Error>(PurchasesResponse {
                 item,
@@ -96,6 +101,8 @@ pub async fn purchases(
         }).await?
     } else {
         increment_counter!("xivhub_purchases_request_cache_miss", "page" => page.to_string());
+
+        let start = Instant::now();
         let purchases = sqlx::query_as!(
             Purchase,
             "SELECT * FROM purchase WHERE item_id = $1 ORDER BY purchase_time DESC OFFSET $2 LIMIT $3",
@@ -105,6 +112,9 @@ pub async fn purchases(
         )
         .fetch_all(&state.pool)
         .await?;
+        let elapsed = start.elapsed();
+        histogram!("xivhub_query", elapsed, "type" => "purchases");
+
         let item = fetch_item_info(item_id, &state.pool).await?;
         PurchasesResponse {
             item,
@@ -127,6 +137,7 @@ pub async fn get_item_upload_dates(
     State(state): State<AppState>,
     Path(item_id): Path<i32>,
 ) -> Result<Json<Vec<ItemUploadDates>>, AppError> {
+    let start = Instant::now();
     let uploads = sqlx::query_as!(
         ItemUploadDates,
         "SELECT world_id, MAX(upload_time) as upload_time FROM upload WHERE item_id = $1 GROUP BY world_id, item_id",
@@ -134,6 +145,8 @@ pub async fn get_item_upload_dates(
     )
     .fetch_all(&state.pool)
     .await?;
+    let elapsed = start.elapsed();
+    histogram!("xivhub_query", elapsed, "type" => "item_upload_dates");
 
     Ok(Json(uploads))
 }
@@ -178,6 +191,7 @@ pub async fn list(
 ) -> Result<Json<ListItemsResponse>, AppError> {
     let page = query.page.unwrap_or(0);
 
+    let start = Instant::now();
     let total_items = {
         if let Some(search) = &query.search {
             sqlx::query!(
@@ -195,9 +209,12 @@ pub async fn list(
         }
     }
     .unwrap_or(0);
+    let elapsed = start.elapsed();
+    histogram!("xivhub_query", elapsed, "type" => "list_items_total", "search" => query.search.is_some().to_string());
 
+    let start = Instant::now();
     let items = {
-        if let Some(search) = query.search {
+        if let Some(search) = &query.search {
             sqlx::query_as!(
                 ItemList,
                 "SELECT i.*, (SELECT COUNT(*) FROM listing l WHERE l.item_id = i.item_id) as listings
@@ -227,6 +244,8 @@ pub async fn list(
             .await?
         }
     };
+    let elapsed = start.elapsed();
+    histogram!("xivhub_query", elapsed, "type" => "list_item", "search" => query.search.is_some().to_string());
 
     Ok(Json(ListItemsResponse {
         items,
