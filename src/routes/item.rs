@@ -147,14 +147,16 @@ pub async fn purchases_by_day(
     let start = Instant::now();
     let purchases = sqlx::query_as!(
         RangePurchases,
-        "SELECT
+        "SELECT * FROM (
+            SELECT
             date_trunc('day', purchase_time) as time,
             MAX(price_per_unit) as high,
             MIN(price_per_unit) as low,
             SUM(quantity) as quantity
             FROM purchase WHERE item_id = $1
             GROUP BY date_trunc('day', purchase_time)
-            ORDER BY time DESC LIMIT 30",
+            ORDER BY time DESC LIMIT 30
+        ) AS T1 ORDER BY time ASC",
         item_id,
     )
     .fetch_all(&state.pool)
