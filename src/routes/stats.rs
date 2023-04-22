@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Instant};
 
 use crate::error::AppError;
 use axum::{extract::State, Json};
-use chrono::{DateTime, Utc};
+use chrono::NaiveDate;
 use color_eyre::eyre::eyre;
 use metrics::histogram;
 use serde::Serialize;
@@ -27,7 +27,7 @@ pub struct Stats {
 #[derive(Debug, Serialize, Clone)]
 pub struct DayCount {
     pub count: Option<i64>,
-    pub day: Option<DateTime<Utc>>,
+    pub day: Option<NaiveDate>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -103,7 +103,7 @@ pub async fn stats(State(state): State<AppState>) -> Result<Json<Stats>, AppErro
     let uploads_per_day = tokio::spawn(async move {
         let start = Instant::now();
         let q = sqlx::query_as!(DayCount,
-            "SELECT COUNT(*) as count, DATE_TRUNC('day', upload_time) as day from upload GROUP BY DATE_TRUNC('day', upload_time) ORDER BY day DESC LIMIT 15")
+            "SELECT COUNT(*) as count, date(timezone('UTC', upload_time)) as day from upload GROUP BY date(timezone('UTC', upload_time)) ORDER BY day DESC LIMIT 15")
             .fetch_all(&pool).await;
         let elapsed = start.elapsed();
         histogram!("xivhub_query", elapsed, "type" => "stats_uploads_per_day_count");
@@ -114,7 +114,7 @@ pub async fn stats(State(state): State<AppState>) -> Result<Json<Stats>, AppErro
     let purchase_by_day = tokio::spawn(async move {
         let start = Instant::now();
         let q = sqlx::query_as!(DayCount,
-            "SELECT COUNT(*) as count, DATE_TRUNC('day', purchase_time) as day from purchase GROUP BY DATE_TRUNC('day', purchase_time) ORDER BY day DESC LIMIT 15")
+            "SELECT COUNT(*) as count, date(timezone('UTC', purchase_time)) as day from purchase GROUP BY date(timezone('UTC', purchase_time)) ORDER BY day DESC LIMIT 15")
             .fetch_all(&pool).await;
         let elapsed = start.elapsed();
         histogram!("xivhub_query", elapsed, "type" => "stats_purchases_by_day_count");
