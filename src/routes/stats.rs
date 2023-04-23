@@ -2,9 +2,9 @@ use std::{sync::Arc, time::Instant};
 
 use crate::error::AppError;
 use axum::{extract::State, Json};
+use axum_prometheus::metrics::histogram;
 use chrono::NaiveDate;
 use color_eyre::eyre::eyre;
-use metrics::histogram;
 use serde::Serialize;
 use tokio::{
     task::{JoinError, JoinHandle},

@@ -1,8 +1,8 @@
 use crate::entities::Upload;
 use axum::{extract::State, Json};
+use axum_prometheus::metrics::{histogram, increment_counter};
 use chrono::TimeZone;
 use color_eyre::eyre::eyre;
-use metrics::{histogram, increment_counter};
 use serde::Deserialize;
 use std::time::Instant;
 use tracing::info;

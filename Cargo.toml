@@ -32,8 +32,8 @@ uuid = { version = "1.3.1", features = ["serde"] }
 tower-http = { version = "0.4.0", features = ["full"] }
 sha256 = "1.1.3"
 axum-prometheus = "0.3.2"
-metrics-exporter-prometheus = "0.12.0"
-metrics = "0.21.0"
+#metrics-exporter-prometheus = "0.12.0"
+metrics = "0.20.1"
 ironworks = {version = "0.4.1", features = ["excel", "ffxiv", "sqpack"]}
 ironworks_sheets = {git = "https://github.com/ackwell/ironworks", branch = "sheets/saint-coinach"}
 bincode = "1.3.3"

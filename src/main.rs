@@ -14,14 +14,12 @@ use axum::{
     Router,
 };
 use axum_prometheus::PrometheusMetricLayer;
-use headers::HeaderValue;
 use moka::future::Cache;
-use reqwest::{header, Method};
+use reqwest::Method;
 use sqlx::postgres::PgPoolOptions;
 use std::{net::SocketAddr, time::Duration};
 use tower_http::{
     cors::{Any, CorsLayer},
-    set_header::SetResponseHeaderLayer,
     timeout::TimeoutLayer,
     trace::TraceLayer,
 };
@@ -82,20 +80,8 @@ async fn run() -> color_eyre::Result<()> {
         .route("/last_uploads", get(routes::upload::last_uploads))
         .route("/history", post(routes::upload::history))
         .route("/upload", post(routes::upload::listings))
-        .route(
-            "/stats",
-            get(routes::stats::stats).layer(SetResponseHeaderLayer::if_not_present(
-                header::CACHE_CONTROL,
-                HeaderValue::from_static("max-age=300, must-revalidate"),
-            )),
-        )
-        .route(
-            "/cache_stats",
-            get(routes::stats::cache_stats).layer(SetResponseHeaderLayer::if_not_present(
-                header::CACHE_CONTROL,
-                HeaderValue::from_static("max-age=300, must-revalidate"),
-            )),
-        )
+        .route("/stats", get(routes::stats::stats))
+        .route("/cache_stats", get(routes::stats::cache_stats))
         .route("/item", get(routes::item::list))
         .route("/item/:id", get(routes::item::listings))
         .route("/item/:id/purchases", get(routes::item::purchases))

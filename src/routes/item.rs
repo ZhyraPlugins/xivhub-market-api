@@ -8,8 +8,8 @@ use axum::{
     extract::{Path, Query, State},
     Json,
 };
+use axum_prometheus::metrics::{histogram, increment_counter};
 use chrono::{DateTime, Utc};
-use metrics::{histogram, increment_counter};
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
