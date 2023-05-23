@@ -60,6 +60,12 @@ pub async fn listings(
     let date = chrono::Utc::now();
     info!("Received upload for item {}", payload.item_id);
 
+    if payload.world_id > 1000 {
+        // mostly chinese servers
+        // todo: handle better
+        return Ok(());
+    }
+
     let upload_time = Instant::now();
 
     sqlx::query!(
@@ -142,6 +148,12 @@ pub async fn history(
         "Received purchase history upload for item {}",
         payload.item_id
     );
+
+    if payload.world_id > 1000 {
+        // mostly chinese servers
+        // todo: handle better
+        return Ok(());
+    }
 
     let mut trans = state.pool.begin().await?;
 
