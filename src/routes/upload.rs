@@ -60,7 +60,7 @@ pub async fn listings(
     let date = chrono::Utc::now();
     info!("Received upload for item {}", payload.item_id);
 
-    if payload.world_id > 1000 {
+    if payload.world_id > 1000 || payload.world_id == 0 {
         // mostly chinese servers
         // todo: handle better
         return Ok(());
@@ -149,7 +149,7 @@ pub async fn history(
         payload.item_id
     );
 
-    if payload.world_id > 1000 {
+    if payload.world_id > 1000 || payload.world_id == 0 {
         // mostly chinese servers
         // todo: handle better
         return Ok(());
