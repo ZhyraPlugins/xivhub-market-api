@@ -40,3 +40,4 @@ bincode = "1.3.3"
 zstd = "0.12.3"
 smallstr = { version = "0.3.0", features = ["std", "serde"] }
 thiserror = "1.0.40"
+tokio-cron-scheduler = "0.9.4"

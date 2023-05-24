@@ -50,3 +50,7 @@ RUST_LOG=debug,sqlx=error,hyper=info
 PORT=3000
 XIVAPI_PRIVATE_KEY="xivapi.com key"
 ```
+
+```
+delete from purchase where purchase_time < NOW() - INTERVAL '1 months';
+```

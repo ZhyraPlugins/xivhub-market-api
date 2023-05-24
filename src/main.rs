@@ -18,11 +18,13 @@ use moka::future::Cache;
 use reqwest::Method;
 use sqlx::postgres::PgPoolOptions;
 use std::{net::SocketAddr, time::Duration};
+use tokio_cron_scheduler::{Job, JobScheduler};
 use tower_http::{
     cors::{Any, CorsLayer},
     timeout::TimeoutLayer,
     trace::TraceLayer,
 };
+use tracing::error;
 use xivhub_market::{
     routes::{self},
     AppState,
@@ -73,6 +75,29 @@ async fn run() -> color_eyre::Result<()> {
             .max_capacity(1)
             .build(),
     };
+
+    let sched = JobScheduler::new().await?;
+
+    let sched_pool = pool.clone();
+    sched
+        .add(Job::new_repeated_async(
+            Duration::from_secs(60 * 30),
+            move |_, _sched| {
+                let sched_pool = sched_pool.clone();
+                Box::pin(async move {
+                    let result = sqlx::query!(
+                        "delete from purchase where purchase_time < NOW() - INTERVAL '1 months'"
+                    )
+                    .execute(&sched_pool)
+                    .await;
+
+                    if let Err(e) = result {
+                        error!("task (sched) error: {}", e);
+                    }
+                })
+            },
+        )?)
+        .await?;
 
     // build our application with a route
     let app = Router::new()
